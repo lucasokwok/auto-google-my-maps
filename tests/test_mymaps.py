@@ -164,6 +164,28 @@ def test_reimporta_correspondentes_e_exige_um_novo_sinal_de_sucesso(pagina, impo
     dialogo.wait_for.assert_called_once_with(state="hidden")
 
 
+@pytest.mark.parametrize(("rotulo", "aceito"), [
+    ("Atualizar itens relacionados", True),
+    ("Atualizar itens correspondentes", True),
+    ("Update matching items", True),
+    ("Mesclar itens relacionados", False),
+    ("Substituir todos os itens", False),
+])
+def test_aceita_apenas_rotulos_da_atualizacao_por_correspondencia(rotulo, aceito):
+    assert bool(mymaps._CORRESPONDENTES.fullmatch(rotulo)) is aceito
+
+
+def test_falha_na_opcao_de_itens_relacionados_informa_etapa_e_impede_upload(pagina, importacao):
+    estado, remota, _, _ = importacao
+    opcoes = [Mock(), Mock(), Mock()]
+    opcoes[-1].click.side_effect = TimeoutError("DETALHE_FICTICIO")
+    estado.menu.side_effect = opcoes
+    with pytest.raises(mymaps.ErroMapa, match='selecionar "Atualizar itens relacionados"') as erro:
+        mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    assert "DETALHE_FICTICIO" not in str(erro.value)
+    estado.enviar.assert_not_called()
+
+
 def test_falha_no_picker_impede_confirmacao(pagina, importacao):
     estado, remota, dialogo, _ = importacao
     estado.enviar.side_effect = TimeoutError("DETALHE_FICTICIO")

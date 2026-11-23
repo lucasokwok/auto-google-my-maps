@@ -20,7 +20,7 @@ Se a sessão expirar, abra o Edge diretamente com a mesma pasta e faça o login 
 
 1. Abra a URL de edição cadastrada e confirme o `mid` do mapa de destino.
 2. Aguarde o título exato de cada camada e associe-o a um único cabeçalho da legenda com controle de visibilidade e menu de opções. O log distingue um título ausente de um título que não pôde ser associado ao menu.
-3. Acesse **Reimportar e mesclar → Reimportar → Atualizar itens correspondentes**.
+3. Acesse **Reimportar e mesclar → Reimportar → Atualizar itens relacionados**. A opção também pode aparecer como **Atualizar itens correspondentes** ou **Update matching items**.
 4. Envie os bytes validados do CSV pelo seletor de arquivos e confirme a seleção no Picker quando indicada.
 5. Selecione a coluna configurada nos campos **Dados da camada** e **Dados enviados**. Clique em **Concluir**.
 6. Aguarde um aviso novo e explícito de sucesso e o fechamento do assistente. Um aviso de falha, um diálogo inesperado ou a ausência de confirmação após o envio interrompe o mapa.
