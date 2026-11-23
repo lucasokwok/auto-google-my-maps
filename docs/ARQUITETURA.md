@@ -7,7 +7,7 @@ A aplicação usa CSVs locais para atualizar pontos de camadas já cadastradas n
 | Arquivo | Responsabilidade |
 | --- | --- |
 | `configuracao.py` | Lê o JSON privado. Valida os nomes locais, os links de edição, a estratégia e a unicidade dos mapas. |
-| `csvs.py` | Descobre séries contíguas de um a cinco CSVs e verifica conteúdo, limites e coordenadas. Mantém os bytes validados em memória para o envio. |
+| `csvs.py` | Descobre séries contíguas de um a cinco CSVs e verifica conteúdo, limites e coordenadas. Mantém o caminho e o conteúdo validado de cada arquivo para conferir o CSV original durante o envio. |
 | `navegador.py` | Inicia o navegador visível com perfil persistente, confirma o login manual e detecta pedidos de autenticação. |
 | `mymaps.py` | Confirma o editor e o mapa de destino, identifica as camadas, opera o seletor de arquivos e o assistente de correspondência e verifica a resposta da interface. |
 | `atualizacao.py` | Coordena a validação e a atualização por mapa e registra o resultado de cada operação. |
