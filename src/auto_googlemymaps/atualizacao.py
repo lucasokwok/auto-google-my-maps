@@ -11,7 +11,7 @@ from playwright.sync_api import BrowserContext
 from .configuracao import Configuracao, Mapa
 from .csvs import ResultadoMapa, validar_mapa
 from .mymaps import ErroMapa, abrir_mapa, localizar_camada, reimportar_camada
-from .navegador import ErroAutenticacao, abrir_navegador
+from .navegador import NAVEGADOR_PADRAO, ErroAutenticacao, abrir_navegador
 
 
 def _atualizar_mapa(
@@ -49,7 +49,9 @@ def _atualizar_mapa(
     return True
 
 
-def atualizar_mapas(config: Configuracao, raiz: Path, perfil: Path, log: Logger) -> bool:
+def atualizar_mapas(
+    config: Configuracao, raiz: Path, perfil: Path, log: Logger, *, navegador: str = NAVEGADOR_PADRAO,
+) -> bool:
     """Retorna se todos os mapas passaram pela validação e atualização."""
     sucesso = True
     contexto = None
@@ -63,7 +65,7 @@ def atualizar_mapas(config: Configuracao, raiz: Path, perfil: Path, log: Logger)
                 continue
 
             if contexto is None:
-                contexto = recursos.enter_context(abrir_navegador(perfil))
+                contexto = recursos.enter_context(abrir_navegador(perfil, navegador=navegador))
             if not _atualizar_mapa(contexto, mapa, resultado, config.coluna_identificacao, log):
                 sucesso = False
     return sucesso

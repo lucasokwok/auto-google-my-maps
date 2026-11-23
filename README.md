@@ -6,7 +6,7 @@ Automação local em Python e Playwright para atualizar pontos em **camadas exis
 
 ## Instalação
 
-Use Python 3.10 ou superior e, para `login` e `atualizar`, um ambiente com interface gráfica e o Chromium do Playwright.
+Use Python 3.10 ou superior e, para `login` e `atualizar`, um ambiente com interface gráfica. O navegador padrão é o Chromium do Playwright. A opção `--navegador edge` usa o Microsoft Edge já instalado no computador.
 
 ```bash
 python -m venv .venv
@@ -59,12 +59,28 @@ python -m auto_googlemymaps atualizar
 ```
 
 - `validar` verifica o cadastro e os dados locais. `planejar` também mostra as camadas e as contagens de registros. Ambos funcionam sem abrir o navegador.
-- `login` abre o Chromium. Entre manualmente na conta Google com permissão de edição, conclua eventuais verificações e pressione Enter no terminal. O perfil é salvo em `runtime/google_profile/`. Se a sessão expirar, execute `login` novamente com o mesmo perfil.
+- `login` abre o navegador selecionado. Entre manualmente na conta Google com permissão de edição, conclua eventuais verificações e pressione Enter no terminal. O perfil padrão é `runtime/google_profile/` no Chromium e `runtime/google_profile_edge/` no Edge. Se a sessão expirar, execute `login` novamente com o mesmo navegador e perfil.
 - `atualizar` valida os CSVs e verifica se todas as camadas esperadas existem antes da primeira reimportação do mapa. Use `--mapa` com o `NomeMapa` exato para processar apenas aquele mapa. Uma falha de camada encerra o mapa em andamento. Uma falha de autenticação encerra o lote.
 
-As opções `--config` e `--mapas-dir` substituem os caminhos locais padrão. Use o mesmo `--perfil-dir` em `login` e `atualizar` se precisar de um caminho alternativo, inclusive para reutilizar um perfil existente em `runtime/chromium-profile/`. Em ambientes temporários, faça login novamente se o perfil local tiver sido perdido.
+As opções `--config` e `--mapas-dir` substituem os caminhos locais padrão. Use o mesmo `--navegador` e, se definir um caminho alternativo, o mesmo `--perfil-dir` em `login` e `atualizar`. Em ambientes temporários, faça login novamente se o perfil local tiver sido perdido.
 
 A atualização registra progresso e erros no terminal e em `logs/atualizacao.log`. Os logs contêm nomes de mapas e camadas, contagens e mensagens sanitizadas. O código de saída é `0` para sucesso, `1` para falha operacional ou de validação dos CSVs, `2` para erro de configuração, uso ou abertura do log e `130` para interrupção no login ou na atualização. [Segurança e privacidade](docs/SEGURANCA.md)
+
+## Teste com o Microsoft Edge
+
+Com o Edge instalado e o Playwright disponível no ambiente Python, faça o login manual.
+
+```bash
+python -m auto_googlemymaps login --navegador edge
+```
+
+Se o terminal confirmar o login, teste a atualização de um único mapa usando o mesmo navegador.
+
+```bash
+python -m auto_googlemymaps atualizar --navegador edge --mapa MAPA_TESTE_RIO_DE_JANEIRO
+```
+
+O Google também pode recusar a autenticação no Edge quando ele é controlado pelo Playwright. Se a tela exibir **Este navegador ou app pode não ser seguro**, pressione Enter para encerrar a tentativa com uma mensagem no terminal. [Ajuda da Conta do Google](https://support.google.com/accounts/answer/7675428?co=GENIE.Platform%3DDesktop&hl=pt-BR)
 
 ## Primeiro teste manual
 

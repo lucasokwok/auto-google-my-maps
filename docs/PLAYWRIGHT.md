@@ -2,11 +2,11 @@
 
 ## Autenticação e recuperação de sessão
 
-`login` usa `launch_persistent_context()` com o Chromium visível. Conclua o login manual na conta com acesso de edição e pressione Enter quando a página Minha Conta abrir. O programa verifica o acesso à página pela mesma sessão antes de fechar o navegador.
+`login` usa `launch_persistent_context()` com uma janela visível. O padrão é o Chromium do Playwright. Com `--navegador edge`, o Playwright abre o Microsoft Edge instalado pelo canal `msedge`. Conclua o login manual na conta com acesso de edição e pressione Enter quando a página Minha Conta abrir. O programa verifica o acesso à página pela mesma sessão antes de fechar o navegador. [Navegadores com suporte no Playwright](https://playwright.dev/python/docs/browsers#google-chrome--microsoft-edge)
 
-`atualizar` reutiliza `runtime/google_profile/` e abre uma página por mapa. Se o Google redirecionar para o login, sinalizar sessão não autorizada ou apresentar uma verificação reconhecida, a atualização é interrompida com uma mensagem no terminal e no log. Execute `login` com o mesmo `--perfil-dir` e repita o comando após conferir a última camada processada. Conclua verificações de segurança manualmente na sessão interativa.
+`atualizar` reutiliza `runtime/google_profile/` no Chromium ou `runtime/google_profile_edge/` no Edge e abre uma página por mapa. Se o Google redirecionar para o login, sinalizar sessão não autorizada ou apresentar uma verificação reconhecida, a atualização é interrompida com uma mensagem no terminal e no log. Execute `login` com o mesmo navegador e perfil e repita o comando após conferir a última camada processada. Conclua verificações de segurança manualmente na sessão interativa.
 
-Mantenha o perfil em um diretório local persistente. Use um processo por perfil de cada vez. Se o Chromium não iniciar, confirme a instalação do navegador, a disponibilidade de uma sessão gráfica e se outro processo está usando o perfil.
+Mantenha o perfil em um diretório local persistente. Use um processo por perfil de cada vez. Se o navegador não iniciar, confirme a instalação, a disponibilidade de uma sessão gráfica e se outro processo está usando o perfil. A aceitação do login pelo Google depende do ambiente em que o navegador é executado.
 
 ## Reimportação
 
