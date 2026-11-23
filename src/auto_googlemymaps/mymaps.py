@@ -12,7 +12,6 @@ from .csvs import Camada
 from .navegador import ErroAutenticacao, exigir_sessao
 
 _OPCOES_CAMADA = re.compile(r"^(?:Layer options|Opções da camada)$", re.IGNORECASE)
-_ADICIONAR_CAMADA = re.compile(r"^(?:Add layer|Adicionar camada)$", re.IGNORECASE)
 _REIMPORTAR_MESCLAR = re.compile(r"^(?:Reimport and merge|Reimportar e mesclar)\s*[►▸›]?$", re.IGNORECASE)
 _REIMPORTAR = re.compile(r"^(?:Reimport|Reimportar)\s*[►▸›]?$", re.IGNORECASE)
 _CORRESPONDENTES = re.compile(r"^(?:Update matching items|Atualizar itens correspondentes)$", re.IGNORECASE)
@@ -69,11 +68,9 @@ def abrir_mapa(pagina: Page, mapa: Mapa) -> None:
                     "Sessão Google não autorizada. Execute login com o mesmo --navegador e --perfil-dir."
                 )
             raise ErroMapa("O Google não abriu o editor. Confira o acesso de edição ao mapa.")
-        pagina.get_by_role("button", name=_ADICIONAR_CAMADA).wait_for(state="visible")
-        _confirmar_destino(pagina, mapa)
     except Error:
         exigir_sessao(pagina)
-        raise ErroMapa("O editor do mapa não ficou acessível. Confira a permissão e a interface.") from None
+        raise ErroMapa("O navegador não concluiu a abertura do editor do mapa.") from None
 
 
 def localizar_camada(pagina: Page, nome: str) -> CamadaRemota:
@@ -85,14 +82,18 @@ def localizar_camada(pagina: Page, nome: str) -> CamadaRemota:
     )
     controle = cabecalho.locator(seletor_checkbox)
     opcoes = cabecalho.get_by_label(_OPCOES_CAMADA).or_(cabecalho.get_by_role("button", name=_OPCOES_CAMADA))
+    etapa = "Camada ausente ou ambígua na legenda. Confira o nome exato no editor."
     try:
         rotulo.wait_for(state="visible")
-        if controle.count() != 1 or controle.get_attribute("id") != rotulo.get_attribute("for"):
-            raise ErroMapa("Não foi possível associar o título a um único controle da camada.")
+        etapa = "Não foi possível associar o título a um único controle da camada na legenda."
+        controle.wait_for(state="attached")
+        if controle.get_attribute("id") != rotulo.get_attribute("for"):
+            raise ErroMapa(etapa)
+        etapa = "O menu de opções desta camada não apareceu no editor."
         opcoes.wait_for(state="attached")
     except Error:
         exigir_sessao(pagina)
-        raise ErroMapa("Camada ausente ou ambígua, ou menu da camada indisponível nesta interface.") from None
+        raise ErroMapa(etapa) from None
     return CamadaRemota(cabecalho, opcoes)
 
 
