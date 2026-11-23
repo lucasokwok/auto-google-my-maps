@@ -15,7 +15,7 @@ from .navegador import NAVEGADOR_PADRAO, ErroAutenticacao, abrir_navegador
 
 
 def _atualizar_mapa(
-    contexto: BrowserContext, mapa: Mapa, resultado: ResultadoMapa, coluna: str, log: Logger,
+    contexto: BrowserContext, mapa: Mapa, resultado: ResultadoMapa, coluna: str, log: Logger, *, arrastar_csv: bool,
 ) -> bool:
     pagina = contexto.new_page()
     operacao = "acesso ao editor"
@@ -31,7 +31,7 @@ def _atualizar_mapa(
         for camada, remota in zip(resultado.camadas, remotas):
             operacao = camada.nome
             log.info("%s — %s — atualizando %d registro(s)", mapa.nome, operacao, camada.quantidade)
-            reimportar_camada(pagina, mapa, remota, camada, coluna)
+            reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
             concluidas += 1
             log.info("%s — %s — atualização confirmada pela interface", mapa.nome, operacao)
     except (ErroMapa, ErroAutenticacao) as erro:
@@ -51,6 +51,7 @@ def _atualizar_mapa(
 
 def atualizar_mapas(
     config: Configuracao, raiz: Path, perfil: Path, log: Logger, *, navegador: str = NAVEGADOR_PADRAO,
+    arrastar_csv: bool = False,
 ) -> bool:
     """Retorna se todos os mapas passaram pela validação e atualização."""
     sucesso = True
@@ -66,6 +67,8 @@ def atualizar_mapas(
 
             if contexto is None:
                 contexto = recursos.enter_context(abrir_navegador(perfil, navegador=navegador))
-            if not _atualizar_mapa(contexto, mapa, resultado, config.coluna_identificacao, log):
+            if not _atualizar_mapa(
+                contexto, mapa, resultado, config.coluna_identificacao, log, arrastar_csv=arrastar_csv,
+            ):
                 sucesso = False
     return sucesso

@@ -12,7 +12,9 @@ from .csvs import validar_todos
 from .navegador import NAVEGADOR_PADRAO, PERFIS_PADRAO, ErroNavegador, login_interativo
 
 
-def _executar_atualizacao(config: Configuracao, raiz: Path, perfil: Path, navegador: str) -> int:
+def _executar_atualizacao(
+    config: Configuracao, raiz: Path, perfil: Path, navegador: str, *, arrastar_csv: bool,
+) -> int:
     caminho_log = Path("logs/atualizacao.log")
     try:
         caminho_log.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +37,8 @@ def _executar_atualizacao(config: Configuracao, raiz: Path, perfil: Path, navega
             log.error('Instale o Playwright com python -m pip install -e ".[browser]".')
             return 1
         try:
-            return 0 if atualizar_mapas(config, raiz, perfil, log, navegador=navegador) else 1
+            atualizado = atualizar_mapas(config, raiz, perfil, log, navegador=navegador, arrastar_csv=arrastar_csv)
+            return 0 if atualizado else 1
         except ErroNavegador as erro:
             log.error("Atualização interrompida — %s", erro)
             return 1
@@ -57,10 +60,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--perfil-dir", help="diretório do perfil persistente (padrão conforme o navegador)")
     parser.add_argument("--mapa", help="NomeMapa exato para atualizar apenas um mapa")
+    parser.add_argument(
+        "--arrastar-csv", action="store_true", help="usar a área de arrastar e soltar do seletor de upload",
+    )
     args = parser.parse_args(argv)
 
     if args.mapa is not None and args.acao != "atualizar":
         parser.error("--mapa está disponível com atualizar")
+    if args.arrastar_csv and args.acao != "atualizar":
+        parser.error("--arrastar-csv está disponível com atualizar")
 
     perfil = Path(args.perfil_dir if args.perfil_dir is not None else PERFIS_PADRAO[args.navegador])
     if args.acao == "login":
@@ -88,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
 
     raiz = Path(args.mapas_dir)
     if args.acao == "atualizar":
-        return _executar_atualizacao(config, raiz, perfil, args.navegador)
+        return _executar_atualizacao(config, raiz, perfil, args.navegador, arrastar_csv=args.arrastar_csv)
 
     falhas = False
     for resultado in validar_todos(config, raiz):

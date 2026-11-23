@@ -77,6 +77,11 @@ def test_atualizar_com_edge_usa_o_mesmo_perfil_padrao_do_login(execucao):
     execucao.abrir_navegador.assert_called_once_with(Path("runtime/google_profile_edge"), navegador="edge")
 
 
+def test_atualizar_com_arrastar_csv_encaminha_metodo_de_upload(execucao):
+    assert main(["atualizar", "--mapa", "B", "--arrastar-csv"]) == 0
+    assert execucao.reimportar.call_args.kwargs == {"arrastar_csv": True}
+
+
 def test_dados_invalidos_bloqueiam_mapa_sem_impedir_validos(execucao, tmp_path):
     (tmp_path / "MAPAS" / "B" / CAMADAS[0]).write_bytes(b"")
     assert main(["atualizar"]) == 1
