@@ -4,15 +4,15 @@
   "mapas": [
     {
       "NomeMapa": "MAPA_TESTE_SAO_PAULO",
-      "URL": "https://www.google.com/maps/d/u/0/edit?mid=1mVwkb6VXyJfk54wNOqcoUBywouBRGNo"
+      "URL": "COLE_A_URL_PRIVADA_DE_EDICAO_AQUI"
     },
     {
       "NomeMapa": "MAPA_TESTE_RIO_DE_JANEIRO",
-      "URL": "https://www.google.com/maps/d/u/0/edit?mid=1_cXE0NFskrg0T8HnYWbeE4SYTUZR7Ws"
+      "URL": "COLE_A_URL_PRIVADA_DE_EDICAO_AQUI"
     },
     {
       "NomeMapa": "MAPA_TESTE_BELO_HORIZONTE",
-      "URL": "https://www.google.com/maps/d/u/0/edit?mid=1SgMkr1y90dWLrpo2wMpgxEkSqTZjyA4"
+      "URL": "COLE_A_URL_PRIVADA_DE_EDICAO_AQUI"
     }
   ]
 }
