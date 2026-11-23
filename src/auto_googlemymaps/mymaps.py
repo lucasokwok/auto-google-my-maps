@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from time import monotonic
 
-from playwright.sync_api import Error, FrameLocator, Locator, Page
+from playwright.sync_api import Error, FrameLocator, Locator, Page, TimeoutError
 
 from .configuracao import ErroConfiguracao, Mapa, identificador_mapa
 from .csvs import Camada
@@ -22,6 +23,7 @@ _CORRESPONDENTES = re.compile(
     r"^(?:Update matching items|Atualizar itens (?:correspondentes|relacionados))$", re.IGNORECASE,
 )
 _ENVIAR = re.compile(r"^(?:Upload|Fazer upload|Enviar)$", re.IGNORECASE)
+_PROCURAR = re.compile(r"^(?:Browse|Procurar)$", re.IGNORECASE)
 _SELECIONAR = re.compile(r"^(?:Select|Selecionar)$", re.IGNORECASE)
 _DADOS_CAMADA = re.compile(r"^(?:Layer data|Dados da camada)\s*:?$", re.IGNORECASE)
 _DADOS_ENVIADOS = re.compile(r"^(?:Uploaded data|Dados enviados|Dados carregados)\s*:?$", re.IGNORECASE)
@@ -42,6 +44,7 @@ _IFRAME_PICKER = (
     'iframe.picker-frame, iframe[src^="https://docs.google.com/picker"], '
     'iframe[src^="https://drive.google.com/picker"], iframe[src^="https://www.google.com/picker"]'
 )
+_PRAZO_UPLOAD_SEGUNDOS = 60
 
 
 class ErroMapa(RuntimeError):
@@ -118,16 +121,39 @@ def _enviar_csv(pagina: Page, camada: Camada) -> None:
         picker.get_by_role("button", name=_ENVIAR)
     )
     upload.click()
-    arquivo = picker.locator('input[type="file"]')
-    arquivo.set_input_files({"name": camada.nome, "mimeType": "text/csv", "buffer": camada.conteudo})
-    selecionar = picker.get_by_role("button", name=_SELECIONAR)
-    if selecionar.is_visible():
+
+    with pagina.expect_file_chooser() as escolha:
+        picker.get_by_role("button", name=_PROCURAR).click()
+    escolha.value.set_files({"name": camada.nome, "mimeType": "text/csv", "buffer": camada.conteudo})
+
+    try:
+        _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
+    except TimeoutError:
+        exigir_sessao(pagina)
+        raise ErroMapa("O seletor de arquivos continuou aberto após o envio do CSV.") from None
+
+
+def _aguardar_fim_do_upload(iframe: Locator, selecionar: Locator) -> None:
+    prazo = monotonic() + _PRAZO_UPLOAD_SEGUNDOS
+    # O Picker pode fechar sozinho ou oferecer Selecionar quando o arquivo estiver pronto.
+    while (restante := int((prazo - monotonic()) * 1000)) > 0:
+        if not iframe.is_visible():
+            return
         try:
-            selecionar.click()
+            confirmar = selecionar.is_visible() and selecionar.is_enabled(timeout=min(restante, 500))
+            if confirmar:
+                selecionar.click(timeout=restante)
         except Error:
-            # O Picker também pode concluir o upload e fechar sem este botão.
             if iframe.is_visible():
                 raise
+            return
+        try:
+            iframe.wait_for(state="hidden", timeout=restante if confirmar else min(restante, 500))
+            return
+        except TimeoutError:
+            if confirmar:
+                break
+    raise TimeoutError("O seletor de arquivos continuou aberto após o envio do CSV.")
 
 
 def _selecionar_coluna(dialogo: Locator, rotulo: re.Pattern[str], coluna: str) -> None:
