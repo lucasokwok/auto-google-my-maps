@@ -18,7 +18,9 @@ _CONTROLE_VISIBILIDADE = (
 )
 _REIMPORTAR_MESCLAR = re.compile(r"^(?:Reimport and merge|Reimportar e mesclar)\s*[►▸›]?$", re.IGNORECASE)
 _REIMPORTAR = re.compile(r"^(?:Reimport|Reimportar)\s*[►▸›]?$", re.IGNORECASE)
-_CORRESPONDENTES = re.compile(r"^(?:Update matching items|Atualizar itens correspondentes)$", re.IGNORECASE)
+_CORRESPONDENTES = re.compile(
+    r"^(?:Update matching items|Atualizar itens (?:correspondentes|relacionados))$", re.IGNORECASE,
+)
 _ENVIAR = re.compile(r"^(?:Upload|Fazer upload|Enviar)$", re.IGNORECASE)
 _SELECIONAR = re.compile(r"^(?:Select|Selecionar)$", re.IGNORECASE)
 _DADOS_CAMADA = re.compile(r"^(?:Layer data|Dados da camada)\s*:?$", re.IGNORECASE)
@@ -153,14 +155,17 @@ def reimportar_camada(
     avisos = pagina.locator('[role="status"], [role="alert"], [aria-live], [role="dialog"]')
     sucesso = avisos.get_by_text(_SUCESSO).or_(avisos.filter(has_text=_SUCESSO)).and_(visivel)
     falha = avisos.get_by_text(_FALHA).or_(avisos.filter(has_text=_FALHA)).and_(visivel)
-    etapa = "abrir o menu de reimportação por correspondência"
+    etapa = "abrir o menu de opções da camada"
     enviada = False
     try:
         _confirmar_destino(pagina, mapa)
         remota.cabecalho.hover()
         remota.opcoes.click()
+        etapa = 'selecionar "Reimportar e mesclar"'
         _item_menu(pagina, _REIMPORTAR_MESCLAR).click()
+        etapa = 'selecionar "Reimportar"'
         _item_menu(pagina, _REIMPORTAR).click()
+        etapa = 'selecionar "Atualizar itens relacionados"'
         _item_menu(pagina, _CORRESPONDENTES).click()
 
         etapa = "enviar o CSV no seletor de arquivos do Google"
