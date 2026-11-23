@@ -1,6 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 from playwright.sync_api import Error, Page, TimeoutError
@@ -122,6 +122,25 @@ def test_procurar_abre_o_seletor_e_envia_o_arquivo_validado(pagina, camada_local
     escolha.value.set_files.assert_called_once_with(camada_local.arquivo)
 
 
+def test_arrastar_entrega_o_arquivo_validado_na_area_do_picker(pagina, camada_local):
+    iframe = pagina.locator.return_value.and_.return_value
+    iframe.is_visible.return_value = False
+    zona = iframe.content_frame.get_by_text.return_value
+    zona.bounding_box.return_value = {"x": 100, "y": 50, "width": 40, "height": 20}
+    sessao = pagina.context.new_cdp_session.return_value
+
+    mymaps._enviar_csv(pagina, camada_local, arrastar_csv=True)
+
+    iframe.content_frame.get_by_text.assert_called_once_with(mymaps._ARRASTAR_ARQUIVO)
+    pagina.expect_file_chooser.assert_not_called()
+    dados = {"items": [], "files": [str(camada_local.arquivo)], "dragOperationsMask": 1}
+    assert sessao.send.call_args_list == [
+        call("Input.dispatchDragEvent", {"type": etapa, "x": 120, "y": 60, "data": dados})
+        for etapa in ("dragEnter", "dragOver", "drop")
+    ]
+    sessao.detach.assert_called_once()
+
+
 def test_csv_alterado_e_bloqueado_antes_de_abrir_procurar(pagina, camada_local):
     camada_local.arquivo.write_bytes(b"conteudo diferente")
 
@@ -228,7 +247,7 @@ def test_reimporta_correspondentes_e_exige_um_novo_sinal_de_sucesso(pagina, impo
     assert [chamada.args[1] for chamada in estado.menu.call_args_list] == [
         mymaps._REIMPORTAR_MESCLAR, mymaps._REIMPORTAR, mymaps._CORRESPONDENTES,
     ]
-    estado.enviar.assert_called_once_with(pagina, CAMADA)
+    estado.enviar.assert_called_once_with(pagina, CAMADA, arrastar_csv=False)
     assert [chamada.args for chamada in estado.coluna.call_args_list] == [
         (dialogo, mymaps._DADOS_CAMADA, "CHAVE"), (dialogo, mymaps._DADOS_ENVIADOS, "CHAVE"),
     ]

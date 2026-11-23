@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from time import monotonic
 from urllib.parse import urlsplit
 
@@ -25,6 +26,7 @@ _CORRESPONDENTES = re.compile(
 )
 _ENVIAR = re.compile(r"^(?:Upload|Fazer upload|Enviar)$", re.IGNORECASE)
 _PROCURAR = re.compile(r"^(?:Browse|Procurar)$", re.IGNORECASE)
+_ARRASTAR_ARQUIVO = re.compile(r"^(?:ou arraste um arquivo até aqui|or drag (?:a file|files) here)$", re.IGNORECASE)
 _SELECIONAR = re.compile(r"^(?:Select|Selecionar)$", re.IGNORECASE)
 _DADOS_CAMADA = re.compile(r"^(?:Layer data|Dados da camada)\s*:?$", re.IGNORECASE)
 _DADOS_ENVIADOS = re.compile(r"^(?:Uploaded data|Dados enviados|Dados carregados)\s*:?$", re.IGNORECASE)
@@ -137,7 +139,23 @@ def _requisicao_de_upload(requisicao: Request) -> bool:
     )
 
 
-def _enviar_csv(pagina: Page, camada: Camada) -> None:
+def _soltar_arquivo(pagina: Page, zona: Locator, arquivo: Path) -> None:
+    zona.hover()
+    caixa = zona.bounding_box()
+    if caixa is None:
+        raise ErroMapa("A área de arrastar o CSV não está visível no seletor do Google.")
+    posicao = {"x": caixa["x"] + caixa["width"] / 2, "y": caixa["y"] + caixa["height"] / 2}
+    # O protocolo Chromium usa a máscara 1 para a operação de cópia.
+    dados = {"items": [], "files": [str(arquivo)], "dragOperationsMask": 1}
+    sessao = pagina.context.new_cdp_session(pagina)
+    try:
+        for evento in ("dragEnter", "dragOver", "drop"):
+            sessao.send("Input.dispatchDragEvent", {"type": evento, **posicao, "data": dados})
+    finally:
+        sessao.detach()
+
+
+def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> None:
     iframe = pagina.locator(_IFRAME_PICKER).and_(pagina.locator(":visible"))
     picker: FrameLocator = iframe.content_frame
     upload = picker.get_by_role("option", name=_ENVIAR).or_(picker.get_by_role("tab", name=_ENVIAR)).or_(
@@ -161,9 +179,12 @@ def _enviar_csv(pagina: Page, camada: Camada) -> None:
     pagina.on("requestfailed", registrar_falha)
     try:
         _conferir_csv_local(camada)
-        with pagina.expect_file_chooser() as escolha:
-            picker.get_by_role("button", name=_PROCURAR).click()
-        escolha.value.set_files(camada.arquivo)
+        if arrastar_csv:
+            _soltar_arquivo(pagina, picker.get_by_text(_ARRASTAR_ARQUIVO), camada.arquivo)
+        else:
+            with pagina.expect_file_chooser() as escolha:
+                picker.get_by_role("button", name=_PROCURAR).click()
+            escolha.value.set_files(camada.arquivo)
 
         try:
             _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
@@ -224,6 +245,7 @@ def _selecionar_coluna(dialogo: Locator, rotulo: re.Pattern[str], coluna: str) -
 
 def reimportar_camada(
     pagina: Page, mapa: Mapa, remota: CamadaRemota, camada: Camada, coluna_identificacao: str,
+    *, arrastar_csv: bool = False,
 ) -> None:
     visivel = pagina.locator(":visible")
     avisos = pagina.locator('[role="status"], [role="alert"], [aria-live], [role="dialog"]')
@@ -244,9 +266,10 @@ def reimportar_camada(
 
         etapa = "enviar o CSV no seletor de arquivos do Google"
         _confirmar_destino(pagina, mapa)
-        _enviar_csv(pagina, camada)
+        _enviar_csv(pagina, camada, arrastar_csv=arrastar_csv)
 
         etapa = "selecionar a coluna de identificação nos dados da camada e do CSV"
+        _confirmar_destino(pagina, mapa)
         # O nome acessível dos dois campos identifica o assistente de correspondência.
         campo_camada = pagina.get_by_role("combobox", name=_DADOS_CAMADA).or_(
             pagina.get_by_role("button", name=_DADOS_CAMADA)
