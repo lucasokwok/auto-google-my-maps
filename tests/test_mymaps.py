@@ -71,35 +71,32 @@ def test_bloqueio_de_seguranca(pagina):
         mymaps.abrir_mapa(pagina, MAPA)
 
 
-def test_localiza_menu_no_cabecalho_do_titulo_exato(pagina):
-    rotulo = pagina.get_by_text.return_value.and_.return_value
-    cabecalho = rotulo.locator.return_value
-    controle = cabecalho.locator.return_value
-    controle.get_attribute.return_value = "layer 1"
-    rotulo.get_attribute.return_value = "layer 1"
+@pytest.fixture
+def cabecalhos(pagina):
+    return pagina.get_by_label.return_value.or_.return_value.or_.return_value.locator.return_value
+
+
+def test_localiza_menu_no_cabecalho_do_titulo_exato(pagina, cabecalhos):
+    titulo = pagina.get_by_text.return_value.and_.return_value
+    cabecalho = cabecalhos.filter.return_value
     remota = mymaps.localizar_camada(pagina, CAMADA.nome)
     pagina.get_by_text.assert_called_once_with(CAMADA.nome, exact=True)
+    cabecalhos.filter.assert_called_once_with(has=titulo)
     assert remota.cabecalho is cabecalho
-    assert remota.opcoes is cabecalho.get_by_label.return_value.or_.return_value
-    controle.wait_for.assert_called_once_with(state="attached")
+    assert remota.opcoes is cabecalho.get_by_label.return_value.or_.return_value.or_.return_value
     remota.opcoes.wait_for.assert_called_once_with(state="attached")
 
 
-def test_camada_ambigua_nao_e_aceita(pagina):
-    rotulo = pagina.get_by_text.return_value.and_.return_value
-    rotulo.wait_for.side_effect = Error("múltiplos rótulos")
-    with pytest.raises(mymaps.ErroMapa, match="Camada ausente ou ambígua"):
+def test_cabecalho_ambiguo_nao_e_aceito(pagina, cabecalhos):
+    cabecalhos.filter.return_value.wait_for.side_effect = Error("múltiplos cabeçalhos")
+    with pytest.raises(mymaps.ErroMapa, match="um único menu"):
         mymaps.localizar_camada(pagina, CAMADA.nome)
 
 
-def test_distingue_menu_ausente_de_camada_ausente(pagina):
-    rotulo = pagina.get_by_text.return_value.and_.return_value
-    cabecalho = rotulo.locator.return_value
-    cabecalho.locator.return_value.get_attribute.return_value = "layer 1"
-    rotulo.get_attribute.return_value = "layer 1"
-    opcoes = cabecalho.get_by_label.return_value.or_.return_value
-    opcoes.wait_for.side_effect = TimeoutError("DETALHE_FICTICIO")
-    with pytest.raises(mymaps.ErroMapa, match="O menu de opções desta camada") as erro:
+def test_distingue_titulo_ausente_de_menu_sem_associacao(pagina):
+    titulo = pagina.get_by_text.return_value.and_.return_value
+    titulo.first.wait_for.side_effect = TimeoutError("DETALHE_FICTICIO")
+    with pytest.raises(mymaps.ErroMapa, match="O nome exato da camada não apareceu") as erro:
         mymaps.localizar_camada(pagina, CAMADA.nome)
     assert "DETALHE_FICTICIO" not in str(erro.value)
 

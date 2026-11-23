@@ -11,7 +11,11 @@ from .configuracao import ErroConfiguracao, Mapa, identificador_mapa
 from .csvs import Camada
 from .navegador import ErroAutenticacao, exigir_sessao
 
-_OPCOES_CAMADA = re.compile(r"^(?:Layer options|Opções da camada)$", re.IGNORECASE)
+_OPCOES_CAMADA = re.compile(r"^(?:Layer options|Opções (?:da|de) camada)$", re.IGNORECASE)
+_CONTROLE_VISIBILIDADE = (
+    '@role="checkbox" or self::input[@type="checkbox"] or '
+    'contains(concat(" ", normalize-space(@class), " "), " goog-checkbox ")'
+)
 _REIMPORTAR_MESCLAR = re.compile(r"^(?:Reimport and merge|Reimportar e mesclar)\s*[►▸›]?$", re.IGNORECASE)
 _REIMPORTAR = re.compile(r"^(?:Reimport|Reimportar)\s*[►▸›]?$", re.IGNORECASE)
 _CORRESPONDENTES = re.compile(r"^(?:Update matching items|Atualizar itens correspondentes)$", re.IGNORECASE)
@@ -73,23 +77,27 @@ def abrir_mapa(pagina: Page, mapa: Mapa) -> None:
         raise ErroMapa("O navegador não concluiu a abertura do editor do mapa.") from None
 
 
+def _opcoes_camada(escopo: Page | Locator) -> Locator:
+    return escopo.get_by_label(_OPCOES_CAMADA).or_(
+        escopo.get_by_role("button", name=_OPCOES_CAMADA)
+    ).or_(escopo.get_by_title(_OPCOES_CAMADA))
+
+
 def localizar_camada(pagina: Page, nome: str) -> CamadaRemota:
-    # O rótulo da camada está associado ao controle de visibilidade na legenda.
-    rotulo = pagina.get_by_text(nome, exact=True).and_(pagina.locator('label[for^="layer "]:visible'))
-    seletor_checkbox = '[role="checkbox"][id^="layer "]'
-    cabecalho = rotulo.locator(
-        'xpath=ancestor::*[.//*[@role="checkbox" and starts-with(@id, "layer ")]][1]'
+    titulo = pagina.get_by_text(nome, exact=True).and_(pagina.locator(":visible"))
+    # O menu e o seletor de visibilidade delimitam o cabeçalho, antes da lista de pontos.
+    cabecalhos = _opcoes_camada(pagina).locator(
+        f'xpath=ancestor::*[not(self::body or self::html) and .//*[{_CONTROLE_VISIBILIDADE}]][1]'
     )
-    controle = cabecalho.locator(seletor_checkbox)
-    opcoes = cabecalho.get_by_label(_OPCOES_CAMADA).or_(cabecalho.get_by_role("button", name=_OPCOES_CAMADA))
-    etapa = "Camada ausente ou ambígua na legenda. Confira o nome exato no editor."
+    cabecalho = cabecalhos.filter(has=titulo)
+    opcoes = _opcoes_camada(cabecalho)
+    etapa = "O nome exato da camada não apareceu na página do editor."
     try:
-        rotulo.wait_for(state="visible")
-        etapa = "Não foi possível associar o título a um único controle da camada na legenda."
-        controle.wait_for(state="attached")
-        if controle.get_attribute("id") != rotulo.get_attribute("for"):
-            raise ErroMapa(etapa)
-        etapa = "O menu de opções desta camada não apareceu no editor."
+        titulo.first.wait_for(state="visible")
+        etapa = "Não foi possível associar o título a um único menu de camada na legenda."
+        cabecalho.wait_for(state="visible")
+        cabecalho.locator(f'xpath=.//*[{_CONTROLE_VISIBILIDADE}]').wait_for(state="attached")
+        cabecalho.get_by_text(nome, exact=True).and_(cabecalho.locator(":visible")).wait_for(state="visible")
         opcoes.wait_for(state="attached")
     except Error:
         exigir_sessao(pagina)
