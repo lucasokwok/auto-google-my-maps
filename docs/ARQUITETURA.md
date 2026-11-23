@@ -1,27 +1,25 @@
 # Arquitetura da automação
 
-## Responsabilidade
-
-Este repositório tem **uma única responsabilidade**: utilizar arquivos CSV já disponíveis localmente para atualizar as camadas de mapas existentes no Google My Maps. Não cria mapas novos por padrão e não altera o conteúdo dos CSVs.
-
-## Associação entre mapa e diretório
-
-A configuração privada mantém uma lista de entradas `{ "NomeMapa": "...", "URL": "..." }`.
-
-Para cada entrada, a aplicação procura `MAPAS/<NomeMapa>/` e os arquivos `pontos_01.csv` até `pontos_05.csv`. A URL é usada somente no navegador durante a futura sincronização; os comandos de diagnóstico não a mostram.
+A aplicação usa CSVs locais para atualizar pontos de camadas já cadastradas no Google My Maps. O nome da camada é o nome exato do CSV, incluindo a extensão.
 
 ## Componentes
 
-- `configuracao.py`: lê e valida o JSON privado; barra nomes de pastas inseguros e URLs que não sejam do My Maps.
-- `csvs.py`: valida a estrutura das cinco camadas, UTF-8, chave de identificação, coordenadas e máximo de registros.
-- `navegador.py`: inicializa um perfil local persistente para o login interativo.
-- `__main__.py`: interface de linha de comando (`validar`, `planejar`, `login`).
-- `references/`: documentação e local opcional para consultar uma implementação pública sem misturá-la ao aplicativo.
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `configuracao.py` | Lê o JSON privado. Valida os nomes locais, os links de edição, a estratégia e a unicidade dos mapas. |
+| `csvs.py` | Descobre séries contíguas de um a cinco CSVs e verifica conteúdo, limites e coordenadas. Mantém os bytes validados em memória para o envio. |
+| `navegador.py` | Inicia o navegador visível com perfil persistente, confirma o login manual e detecta pedidos de autenticação. |
+| `mymaps.py` | Confirma o editor e o mapa de destino, identifica as camadas, opera o seletor de arquivos e o assistente de correspondência e verifica a resposta da interface. |
+| `atualizacao.py` | Coordena a validação e a atualização por mapa e registra o resultado de cada operação. |
+| `__main__.py` | Expõe `validar`, `planejar`, `login` e `atualizar`, seleciona o mapa solicitado e configura os logs. |
 
-## Pré-validação obrigatória
+## Sequência de execução
 
-A futura sincronização deve ser bloqueada se qualquer mapa tiver pasta ausente, algum CSV obrigatório ausente, arquivo vazio, ID duplicado, coordenadas inválidas ou mais de 2.000 registros por camada. Erros de validação não podem resultar em remoção de pontos no My Maps.
+1. Valide o cadastro completo e selecione o mapa solicitado quando houver `--mapa`.
+2. Para cada mapa selecionado, valide todos os seus CSVs locais. Erros em um mapa impedem a abertura daquele mapa. O navegador é iniciado após a primeira validação bem-sucedida.
+3. Abra cada mapa em uma página própria do mesmo perfil persistente. Confirme que o editor corresponde ao `mid` do cadastro e que todos os nomes de camada esperados têm um menu associado.
+4. Reimporte e verifique uma camada por vez. Apenas as camadas com CSV local são selecionadas.
 
-## Princípio operacional
+Resultados são registrados por camada. Em caso de falha, feche a página do mapa e siga para os demais. Camadas já concluídas podem ter sido salvas antes da falha. Se o Google exigir autenticação ou uma verificação de segurança, a execução inteira é interrompida.
 
-Atualizar uma camada **existente** e manter o mesmo mapa/link. O comportamento específico da interface deverá ser homologado por meio de testes antes de uma execução agendada.
+Os testes verificam validação local, filtragem, ordem das checagens, isolamento de falhas e o tratamento de operações do navegador com mocks.

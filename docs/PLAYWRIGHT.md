@@ -1,33 +1,28 @@
 # Playwright e Google My Maps
 
-## Escopo da integração de navegador
+## Autenticação e recuperação de sessão
 
-Usar Playwright **somente** para as interações na interface web do Google My Maps. Nenhuma API de planilhas ou método não oficial de escrita no Google é necessário para este desenho.
+`login` usa `launch_persistent_context()` com o Chromium visível. Conclua o login manual na conta com acesso de edição e pressione Enter quando a página Minha Conta abrir. O programa verifica o acesso à página pela mesma sessão antes de fechar o navegador.
 
-A rotina ainda a implementar deverá:
+`atualizar` reutiliza `runtime/google_profile/` e abre uma página por mapa. Se o Google redirecionar para o login, sinalizar sessão não autorizada ou apresentar uma verificação reconhecida, a atualização é interrompida com uma mensagem no terminal e no log. Execute `login` com o mesmo `--perfil-dir` e repita o comando após conferir a última camada processada. Conclua verificações de segurança manualmente na sessão interativa.
 
-1. Utilizar uma sessão autenticada previamente, guardada localmente em `runtime/`.
-2. Navegar para a URL de edição do mapa (sem registrar essa URL em logs).
-3. Encontrar cada camada pelo nome exato do arquivo: `pontos_01.csv`, ..., `pontos_05.csv`.
-4. Acionar **Reimportar e mesclar → Reimportar → Atualizar itens correspondentes**.
-5. Selecionar o CSV local apropriado no seletor de upload.
-6. Informar a coluna de identificação para a correspondência, quando solicitada.
-7. Verificar o resultado da operação antes de seguir para a próxima camada.
+Mantenha o perfil em um diretório local persistente. Use um processo por perfil de cada vez. Se o Chromium não iniciar, confirme a instalação do navegador, a disponibilidade de uma sessão gráfica e se outro processo está usando o perfil.
 
-### Autenticação
+## Reimportação
 
-Execute `python -m auto_googlemymaps login` para abrir o navegador e entrar manualmente na conta Google que possui acesso de edição aos mapas. O aplicativo **não solicita, lê ou armazena a senha**. A pasta persistente do navegador fica em `runtime/chromium-profile/` e está ignorada pelo Git.
+1. Abra a URL de edição cadastrada. Confirme o `mid` e a presença do controle de edição **Adicionar camada**.
+2. Identifique cada camada pelo título exato no cabeçalho da legenda e confirme o menu de opções desse cabeçalho.
+3. Acesse **Reimportar e mesclar → Reimportar → Atualizar itens correspondentes**.
+4. Envie os bytes validados do CSV pelo seletor de arquivos e confirme a seleção no Picker quando indicada.
+5. Selecione a coluna configurada nos campos **Dados da camada** e **Dados enviados**. Clique em **Concluir**.
+6. Aguarde um aviso novo e explícito de sucesso e o fechamento do assistente. Um aviso de falha, um diálogo inesperado ou a ausência de confirmação após o envio interrompe o mapa.
 
-### Confiabilidade
+Pela semântica documentada pelo Google, a operação inclui os itens novos, atualiza os correspondentes e remove os ausentes do CSV. Os correspondentes podem manter estilos personalizados e fotos. [Ajuda oficial do Google My Maps](https://support.google.com/mymaps/answer/3024836?hl=pt-BR)
 
-- Preferir locators semânticos (`get_by_role`, `get_by_text`) e esperas explícitas.
-- Não basear a lógica em pausas fixas nem coordenadas de tela.
-- Usar `set_input_files()` quando houver `<input type="file">` acessível.
-- Processar uma camada por vez e registrar o status por mapa/camada.
-- Falhar de forma fechada: se a interface divergir, interromper o mapa em vez de adivinhar cliques.
-- Não publicar capturas, rastros, perfil autenticado ou URLs.
-- Não automatizar digitação de senha ou contornar desafios de segurança.
+## Validação efetiva e limites
 
-A reimportação está descrita na ajuda oficial do My Maps: https://support.google.com/mymaps/answer/3024836?hl=pt-BR.
+Os testes automatizados com mocks cobrem a navegação para o editor, a seleção de camadas, as etapas do Picker, a correspondência e os caminhos de erro. Um ensaio em Chromium com páginas simuladas exercitou a interação em português e inglês, incluindo o envio de um CSV com BOM.
 
-**Estado:** esta parte é uma especificação de implementação; a rotina de reimportação ainda não foi implementada.
+A homologação ainda precisa confirmar, no editor autenticado, a estrutura real do cabeçalho e dos menus, o seletor de arquivos, os dois campos de correspondência e o aviso de sucesso ou erro. A aceitação da sessão persistente pelo Google também precisa de verificação manual. Os seletores usam textos e nomes acessíveis em inglês e português e dependem da estrutura semântica da legenda. Variações de interface podem interromper a operação.
+
+Fechar um diálogo não é confirmação de sucesso. Se o log indicar **resultado indeterminado**, abra o mapa, confira os dados e o estilo da camada indicada e só então decida se é necessário repetir. A atualização de várias camadas não é uma transação única. Execute primeiro em mapas fictícios e compare o efeito por ID depois de reabrir o mapa.

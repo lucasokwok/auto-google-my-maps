@@ -1,28 +1,18 @@
 # Roadmap
 
-## Etapa 1 — Estrutura segura (incluída neste ZIP)
+## Implementado
 
-- [x] Cadastro privado de mapas por `NomeMapa` e `URL`.
-- [x] Associação de `NomeMapa` a `MAPAS/<NomeMapa>/`.
-- [x] Validação de cinco arquivos CSV por mapa.
-- [x] Ignorar configurações reais, dados de mapas, sessões e logs no Git.
-- [x] Login manual por perfil local persistente.
-- [x] Testes unitários básicos.
+- Cadastro privado com links de edição e associação aos diretórios locais.
+- Validação de um a cinco CSVs consecutivos por mapa.
+- Perfil persistente, login manual e tratamento de pedidos de nova autenticação.
+- Fluxo Playwright para reimportar por correspondência, com pré-checagem de camadas individuais e verificação do resultado.
+- Atualização em lote ou por nome de mapa, com log local sanitizado.
+- Testes unitários com mocks e ensaio em Chromium com uma interface simulada.
 
-## Etapa 2 — Automação da interface (pendente)
+## Homologação no Google My Maps
 
-- [ ] Identificar os seletores reais do My Maps em uma conta de teste.
-- [ ] Localizar as cinco camadas pelo nome exibido.
-- [ ] Automatizar a reimportação do CSV para cada camada.
-- [ ] Selecionar a coluna para correspondência dos pontos.
-- [ ] Confirmar a conclusão e fazer tratamento de falhas.
-- [ ] Validar preservação dos estilos e exclusão dos pontos ausentes.
-
-## Etapa 3 — Operação (pendente)
-
-- [ ] Relatório local de êxitos/falhas sem URLs ou dados de pontos.
-- [ ] Tentativas controladas e recuperação de falhas de navegação.
-- [ ] Execução agendada pelo sistema operacional.
-- [ ] Testes de regressão após mudanças na interface do Google.
-
-A automação não deverá prosseguir quando faltar qualquer CSV ou quando o arquivo estiver vazio, até haver uma política explícita e homologada para esse caso.
+- [ ] Confirmar login manual, reutilização do perfil e detecção de sessão expirada.
+- [ ] Confirmar os seletores do editor, dos menus, do Picker e do assistente de correspondência.
+- [ ] Identificar os sinais reais de sucesso e falha e confirmar que podem ser detectados.
+- [ ] Executar o procedimento do README nos mapas fictícios de uma, duas e cinco camadas.
+- [ ] Reabrir os mapas e verificar adição, remoção, atualização e preservação do estilo dos itens correspondentes.

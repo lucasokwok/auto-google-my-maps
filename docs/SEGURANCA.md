@@ -1,27 +1,27 @@
 # Segurança e privacidade
 
-## O que deve permanecer exclusivamente no computador
+## Dados que permanecem locais
 
-- `config/mapas.json` e qualquer outra configuração privada (incluindo URLs de edição).
-- Todo conteúdo de `MAPAS/`, inclusive subpastas, CSVs e nomes reais de mapas.
-- Perfis de navegador, cookies, sessões e qualquer estado de autenticação (`runtime/`, `auth/`, `.auth/`).
-- Logs, screenshots, traces e demais evidências de execução.
-- `.env`, arquivos de credenciais e chaves privadas, se existirem.
+- Configurações privadas, incluindo `config/mapas.json` e URLs de edição.
+- Dados de mapas, incluindo os CSVs e as pastas desses mapas em `MAPAS/`.
+- Perfis do navegador, cookies e estado de autenticação, incluindo `runtime/google_profile/`.
+- Logs, capturas de tela, traces e outras evidências que possam mostrar mapas ou sessões.
+- Credenciais, chaves privadas e arquivos de ambiente que contenham segredos.
 
-O `.gitignore` bloqueia esses caminhos. Não substitui a revisão de `git status` e `git diff --cached`: arquivos adicionados anteriormente ao índice do Git podem continuar versionados mesmo depois de incluídos no `.gitignore`.
+O `.gitignore` protege esses caminhos no fluxo normal. Arquivos já rastreados precisam ser removidos do índice separadamente. Se precisar compartilhar um erro, omita os nomes reais dos mapas e quaisquer referências aos pontos.
 
-Se algo privado já estiver rastreado, utilize `git rm --cached CAMINHO` (sem apagar o arquivo local), faça novo commit e avalie a necessidade de remover o conteúdo do histórico e revogar segredos eventualmente expostos.
+## Atualizações remotas
 
-## Arquivos públicos permitidos
+A importação só é liberada após validar todos os CSVs do mapa e identificar as camadas pelo nome e pelo menu do próprio cabeçalho. A automação atua no editor com o identificador cadastrado. A estratégia de correspondência pode remover pontos cujo ID ficou fora do CSV. Falhas após a confirmação precisam de inspeção da camada antes de uma nova tentativa.
 
-Código-fonte, documentação genérica, `config/mapas.example.json` com placeholders, testes com dados fictícios e link para uma referência pública de código.
+O log da atualização usa os nomes dos mapas e camadas, contagens e mensagens fixas. URLs completas, exceções brutas do Playwright, dados dos pontos e credenciais ficam fora do log do aplicativo.
 
-## Antes de enviar ao repositório remoto
+## Conferência antes de publicar
 
 ```bash
 git status --short
-git diff --cached --name-only
-git check-ignore -v config/mapas.json MAPAS/NomeMapa_A/pontos_01.csv runtime/chromium-profile
+git diff --cached
+git check-ignore config/mapas.json MAPAS/EXEMPLO/pontos_01.csv runtime/google_profile logs/atualizacao.log
 ```
 
-Nunca use `git add -f` para os caminhos protegidos. Não capture o perfil do navegador em backups públicos. Se precisar reportar erros, compartilhe apenas mensagens sanitizadas, sem nomes reais de mapas, coordenadas, identificadores ou URLs.
+Mantenha o arquivo `config/mapas.example.json` somente com valores ilustrativos. Preserve a proteção dos arquivos ignorados ao preparar commits.
