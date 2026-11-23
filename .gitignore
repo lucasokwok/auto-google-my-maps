@@ -1,0 +1,69 @@
+# Configurações privadas: bloquear tudo em config/ exceto os exemplos e instruções
+/config/*
+!/config/README.md
+!/config/mapas.example.json
+
+# Dados locais: não versionar nenhum mapa, pasta ou CSV
+/MAPAS/**
+!/MAPAS/README.md
+!/MAPAS/gerar_mapas.py
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.kml
+*.kmz
+*.gpx
+
+# Sessões, perfis e possíveis segredos de autenticação
+/runtime/
+/logs/
+/auth/
+/.auth/
+/screenshots/
+/traces/
+/artifacts/
+/playwright-report/
+/test-results/
+**/storage_state*.json
+**/state.json
+*.har
+*.webm
+*.trace.zip
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*client_secret*.json
+*token*.json
+.env
+.env.*
+!.env.example
+
+# Autenticação do Playwright
+**/playwright/.auth/
+**/storage_state.json
+**/storage-state.json
+
+# Referência clonada (terceiros, separada do código do projeto)
+/references/*
+!/references/README.md
+
+# Python / editor / sistema
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
