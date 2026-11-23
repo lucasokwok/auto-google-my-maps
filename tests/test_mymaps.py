@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -10,7 +11,7 @@ from auto_googlemymaps.csvs import Camada
 from auto_googlemymaps.navegador import ErroAutenticacao
 
 MAPA = Mapa("FICTICIO", "https://www.google.com/maps/d/edit?mid=MAPA_FICTICIO")
-CAMADA = Camada("pontos_01.csv", 1, b"ID,Latitude,Longitude\n1,0,0\n")
+CAMADA = Camada("pontos_01.csv", 1, b"ID,Latitude,Longitude\n1,0,0\n", Path("pontos_01.csv"))
 
 
 @pytest.fixture
@@ -101,19 +102,42 @@ def test_distingue_titulo_ausente_de_menu_sem_associacao(pagina):
     assert "DETALHE_FICTICIO" not in str(erro.value)
 
 
-def test_procurar_abre_o_seletor_e_recebe_os_bytes_validados(pagina):
+@pytest.fixture
+def camada_local(tmp_path):
+    arquivo = tmp_path / CAMADA.nome
+    arquivo.write_bytes(CAMADA.conteudo)
+    return Camada(CAMADA.nome, CAMADA.quantidade, CAMADA.conteudo, arquivo)
+
+
+def test_procurar_abre_o_seletor_e_envia_o_arquivo_validado(pagina, camada_local):
     iframe = pagina.locator.return_value.and_.return_value
     iframe.is_visible.return_value = False
     picker = iframe.content_frame
     pagina.expect_file_chooser.return_value = MagicMock()
     escolha = pagina.expect_file_chooser.return_value.__enter__.return_value
 
-    mymaps._enviar_csv(pagina, CAMADA)
+    mymaps._enviar_csv(pagina, camada_local)
     pagina.expect_file_chooser.assert_called_once()
     picker.get_by_role.assert_any_call("button", name=mymaps._PROCURAR)
-    escolha.value.set_files.assert_called_once_with({
-        "name": CAMADA.nome, "mimeType": "text/csv", "buffer": CAMADA.conteudo,
-    })
+    escolha.value.set_files.assert_called_once_with(camada_local.arquivo)
+
+
+def test_csv_alterado_e_bloqueado_antes_de_abrir_procurar(pagina, camada_local):
+    camada_local.arquivo.write_bytes(b"conteudo diferente")
+
+    with pytest.raises(mymaps.ErroMapa, match="mudou desde a validação"):
+        mymaps._enviar_csv(pagina, camada_local)
+    pagina.expect_file_chooser.assert_not_called()
+
+
+def test_csv_alterado_durante_upload_impede_reimportacao(pagina, camada_local, monkeypatch):
+    pagina.expect_file_chooser.return_value = MagicMock()
+    monkeypatch.setattr(
+        mymaps, "_aguardar_fim_do_upload", lambda *_: camada_local.arquivo.write_bytes(b"conteudo diferente"),
+    )
+
+    with pytest.raises(mymaps.ErroMapa, match="mudou desde a validação"):
+        mymaps._enviar_csv(pagina, camada_local)
 
 
 def test_upload_pode_fechar_picker_automaticamente():
@@ -138,14 +162,27 @@ def test_upload_explicito_aguarda_selecionar_ser_habilitado():
     assert iframe.wait_for.call_count == 2
 
 
-def test_picker_aberto_apos_upload_e_falha(pagina, monkeypatch):
+def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local, monkeypatch):
     pagina.expect_file_chooser.return_value = MagicMock()
-    aguardar_upload = Mock(side_effect=TimeoutError("DETALHE_FICTICIO"))
-    monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
+    eventos = {}
+    pagina.on.side_effect = eventos.__setitem__
+    upload = SimpleNamespace(method="POST", url="https://docs.google.com/upload?token=DETALHE_FICTICIO")
+    outra_requisicao = SimpleNamespace(method="POST", url="https://docs.google.com/outra")
 
+    def aguardar_upload(iframe, selecionar):
+        eventos["response"](SimpleNamespace(request=upload, status=403))
+        eventos["response"](SimpleNamespace(request=outra_requisicao, status=500))
+        eventos["requestfailed"](upload)
+        raise TimeoutError("DETALHE_FICTICIO")
+
+    monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
     with pytest.raises(mymaps.ErroMapa, match="continuou aberto após o envio") as erro:
-        mymaps._enviar_csv(pagina, CAMADA)
+        mymaps._enviar_csv(pagina, camada_local)
+    assert "HTTP do upload: 403. Falhas de rede observadas: 1." in str(erro.value)
+    assert "500" not in str(erro.value)
     assert "DETALHE_FICTICIO" not in str(erro.value)
+    for evento, callback in eventos.items():
+        pagina.remove_listener.assert_any_call(evento, callback)
 
 
 @pytest.mark.parametrize("ocorrencias", [0, 2])

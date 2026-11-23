@@ -21,6 +21,7 @@ class Camada:
     nome: str
     quantidade: int
     conteudo: bytes = field(repr=False, compare=False)
+    arquivo: Path = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -93,7 +94,7 @@ def _validar_csv(arquivo: Path, coluna: str) -> tuple[Camada | None, list[str]]:
 
     if quantidade == 0:
         erros.append(f"{nome}: arquivo sem registros; atualização bloqueada")
-    camada = None if erros else Camada(nome, quantidade, conteudo)
+    camada = None if erros else Camada(nome, quantidade, conteudo, arquivo.absolute())
     return camada, erros
 
 

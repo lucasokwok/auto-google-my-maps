@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from time import monotonic
+from urllib.parse import urlsplit
 
-from playwright.sync_api import Error, FrameLocator, Locator, Page, TimeoutError
+from playwright.sync_api import Error, FrameLocator, Locator, Page, Request, Response, TimeoutError
 
 from .configuracao import ErroConfiguracao, Mapa, identificador_mapa
 from .csvs import Camada
@@ -114,6 +115,28 @@ def _item_menu(pagina: Page, nome: re.Pattern[str]) -> Locator:
     return pagina.get_by_text(nome).and_(pagina.locator(":visible"))
 
 
+def _conferir_csv_local(camada: Camada) -> None:
+    try:
+        if camada.arquivo.is_symlink() or not camada.arquivo.is_file():
+            raise OSError
+        with camada.arquivo.open("rb") as arquivo:
+            if arquivo.read(len(camada.conteudo) + 1) != camada.conteudo:
+                raise ErroMapa("O CSV mudou desde a validação. Rode a atualização novamente com o arquivo estável.")
+    except OSError:
+        raise ErroMapa("O CSV validado não está acessível para o navegador.") from None
+
+
+def _requisicao_de_upload(requisicao: Request) -> bool:
+    destino = urlsplit(requisicao.url)
+    dominio = destino.hostname or ""
+    return (
+        requisicao.method in {"POST", "PUT", "PATCH"}
+        and destino.scheme == "https"
+        and (dominio == "google.com" or dominio.endswith((".google.com", ".googleapis.com", ".googleusercontent.com")))
+        and "upload" in destino.path.lower()
+    )
+
+
 def _enviar_csv(pagina: Page, camada: Camada) -> None:
     iframe = pagina.locator(_IFRAME_PICKER).and_(pagina.locator(":visible"))
     picker: FrameLocator = iframe.content_frame
@@ -122,15 +145,40 @@ def _enviar_csv(pagina: Page, camada: Camada) -> None:
     )
     upload.click()
 
-    with pagina.expect_file_chooser() as escolha:
-        picker.get_by_role("button", name=_PROCURAR).click()
-    escolha.value.set_files({"name": camada.nome, "mimeType": "text/csv", "buffer": camada.conteudo})
+    status_http: set[int] = set()
+    falhas_de_rede = 0
 
+    def registrar_resposta(resposta: Response) -> None:
+        if _requisicao_de_upload(resposta.request):
+            status_http.add(resposta.status)
+
+    def registrar_falha(requisicao: Request) -> None:
+        nonlocal falhas_de_rede
+        if _requisicao_de_upload(requisicao):
+            falhas_de_rede += 1
+
+    pagina.on("response", registrar_resposta)
+    pagina.on("requestfailed", registrar_falha)
     try:
-        _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
-    except TimeoutError:
-        exigir_sessao(pagina)
-        raise ErroMapa("O seletor de arquivos continuou aberto após o envio do CSV.") from None
+        _conferir_csv_local(camada)
+        with pagina.expect_file_chooser() as escolha:
+            picker.get_by_role("button", name=_PROCURAR).click()
+        escolha.value.set_files(camada.arquivo)
+
+        try:
+            _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
+        except TimeoutError:
+            exigir_sessao(pagina)
+            codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
+            raise ErroMapa(
+                "O seletor de arquivos continuou aberto após o envio do CSV. "
+                f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}."
+            ) from None
+
+        _conferir_csv_local(camada)
+    finally:
+        pagina.remove_listener("requestfailed", registrar_falha)
+        pagina.remove_listener("response", registrar_resposta)
 
 
 def _aguardar_fim_do_upload(iframe: Locator, selecionar: Locator) -> None:

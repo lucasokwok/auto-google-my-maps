@@ -46,7 +46,7 @@ logs/
   atualizacao.log
 ```
 
-Cada mapa aceita de um a cinco CSVs, com nomes consecutivos começando em `pontos_01.csv`. Cada arquivo deve usar UTF-8 com ou sem BOM, separador vírgula e as colunas `Latitude`, `Longitude` e a coluna de identificação. Use coordenadas numéricas válidas e de 1 a 2.000 registros por arquivo, com IDs preenchidos e únicos dentro da camada. O aplicativo envia os bytes que validou e preserva o conteúdo dos arquivos locais. [Detalhes do cadastro](config/README.md) · [Regras dos CSVs](MAPAS/README.md)
+Cada mapa aceita de um a cinco CSVs, com nomes consecutivos começando em `pontos_01.csv`. Cada arquivo deve usar UTF-8 com ou sem BOM, separador vírgula e as colunas `Latitude`, `Longitude` e a coluna de identificação. Use coordenadas numéricas válidas e de 1 a 2.000 registros por arquivo, com IDs preenchidos e únicos dentro da camada. O aplicativo envia o arquivo original e confere se ele continua com o conteúdo validado. [Detalhes do cadastro](config/README.md) · [Regras dos CSVs](MAPAS/README.md)
 
 ## Execução
 
