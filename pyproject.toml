@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-googlemymaps"
+version = "0.1.0"
+description = "Automacao local de atualizacao de camadas do Google My Maps com Playwright"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+browser = ["playwright>=1.50,<2"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+auto-googlemymaps = "auto_googlemymaps.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
