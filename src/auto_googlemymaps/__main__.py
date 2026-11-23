@@ -9,10 +9,10 @@ from pathlib import Path
 
 from .configuracao import Configuracao, ErroConfiguracao, carregar_configuracao
 from .csvs import validar_todos
-from .navegador import PERFIL_PADRAO, ErroNavegador, login_interativo
+from .navegador import NAVEGADOR_PADRAO, PERFIS_PADRAO, ErroNavegador, login_interativo
 
 
-def _executar_atualizacao(config: Configuracao, raiz: Path, perfil: Path) -> int:
+def _executar_atualizacao(config: Configuracao, raiz: Path, perfil: Path, navegador: str) -> int:
     caminho_log = Path("logs/atualizacao.log")
     try:
         caminho_log.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +35,7 @@ def _executar_atualizacao(config: Configuracao, raiz: Path, perfil: Path) -> int
             log.error('Instale o Playwright com python -m pip install -e ".[browser]".')
             return 1
         try:
-            return 0 if atualizar_mapas(config, raiz, perfil, log) else 1
+            return 0 if atualizar_mapas(config, raiz, perfil, log, navegador=navegador) else 1
         except ErroNavegador as erro:
             log.error("Atualização interrompida — %s", erro)
             return 1
@@ -51,17 +51,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("acao", choices=("validar", "planejar", "login", "atualizar"))
     parser.add_argument("--config", default="config/mapas.json")
     parser.add_argument("--mapas-dir", default="MAPAS")
-    parser.add_argument("--perfil-dir", default=PERFIL_PADRAO)
+    parser.add_argument(
+        "--navegador", choices=PERFIS_PADRAO, default=NAVEGADOR_PADRAO,
+        help="navegador para login e atualizar (padrão: chromium)",
+    )
+    parser.add_argument("--perfil-dir", help="diretório do perfil persistente (padrão conforme o navegador)")
     parser.add_argument("--mapa", help="NomeMapa exato para atualizar apenas um mapa")
     args = parser.parse_args(argv)
 
     if args.mapa is not None and args.acao != "atualizar":
         parser.error("--mapa está disponível com atualizar")
 
-    perfil = Path(args.perfil_dir)
+    perfil = Path(args.perfil_dir if args.perfil_dir is not None else PERFIS_PADRAO[args.navegador])
     if args.acao == "login":
         try:
-            login_interativo(perfil)
+            login_interativo(perfil, navegador=args.navegador)
         except ErroNavegador as erro:
             print(f"Login não confirmado — {erro}")
             return 1
@@ -84,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     raiz = Path(args.mapas_dir)
     if args.acao == "atualizar":
-        return _executar_atualizacao(config, raiz, perfil)
+        return _executar_atualizacao(config, raiz, perfil, args.navegador)
 
     falhas = False
     for resultado in validar_todos(config, raiz):

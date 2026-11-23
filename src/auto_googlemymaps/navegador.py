@@ -11,13 +11,21 @@ from urllib.parse import urlsplit
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
 
-PERFIL_PADRAO = "runtime/google_profile"
+NAVEGADOR_PADRAO = "chromium"
+PERFIS_PADRAO = {
+    "chromium": "runtime/google_profile",
+    "edge": "runtime/google_profile_edge",
+}
 CONTA_GOOGLE = "https://myaccount.google.com/"
 PRAZO_UI_MS = 12_000
 PRAZO_NAVEGACAO_MS = 30_000
-_LOGIN_NECESSARIO = "Sessão Google ausente ou expirada. Execute login com o mesmo --perfil-dir."
+_LOGIN_NECESSARIO = "Sessão Google ausente ou expirada. Execute login com o mesmo --navegador e --perfil-dir."
 _DESAFIO_GOOGLE = "O Google solicitou uma verificação de segurança. Resolva-a manualmente no comando login."
 _ENTRAR = re.compile(r"^(?:Sign in|Fazer login|Iniciar sessão)$", re.IGNORECASE)
+_NAVEGADOR_RECUSADO = re.compile(
+    r"^(?:This browser or app may not be secure|(?:Esse|Este) navegador ou app pode não ser seguro)[.!]?$",
+    re.IGNORECASE,
+)
 
 
 class ErroNavegador(RuntimeError):
@@ -29,17 +37,18 @@ class ErroAutenticacao(ErroNavegador):
 
 
 @contextmanager
-def abrir_navegador(pasta_perfil: Path):
+def abrir_navegador(pasta_perfil: Path, *, navegador: str = NAVEGADOR_PADRAO):
     try:
         from playwright.sync_api import Error, sync_playwright
     except ImportError:
         raise ErroNavegador('Instale o Playwright com python -m pip install -e ".[browser]".') from None
 
+    canal = "msedge" if navegador == "edge" else None
     try:
         pasta_perfil.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as playwright:
             contexto: BrowserContext = playwright.chromium.launch_persistent_context(
-                str(pasta_perfil), headless=False, locale="pt-BR",
+                str(pasta_perfil), channel=canal, headless=False, locale="pt-BR",
             )
             try:
                 contexto.set_default_timeout(PRAZO_UI_MS)
@@ -48,9 +57,10 @@ def abrir_navegador(pasta_perfil: Path):
             finally:
                 contexto.close()
     except (Error, OSError):
+        nome = "Microsoft Edge" if canal else "Chromium do Playwright"
         raise ErroNavegador(
-            "Falha no navegador ou no perfil. Confira se o Chromium do Playwright está "
-            "instalado, se há interface gráfica e se o perfil está acessível e livre."
+            f"Falha no navegador ou no perfil. Confira se o {nome} está instalado, "
+            "se há interface gráfica e se o perfil está acessível e livre."
         ) from None
 
 
@@ -58,6 +68,10 @@ def exigir_sessao(pagina: Page) -> None:
     if pagina.is_closed():
         return
     partes = urlsplit(pagina.url)
+    if partes.hostname == "accounts.google.com" and pagina.get_by_text(
+        _NAVEGADOR_RECUSADO
+    ).first.is_visible():
+        raise ErroAutenticacao("O Google recusou o login neste navegador. A automação foi interrompida.")
     if partes.path.startswith(("/sorry/", "/challenge/")) or pagina.locator(
         'iframe[title*="captcha" i]:visible, iframe[src*="/recaptcha/api2/bframe"]:visible'
     ).count():
@@ -77,12 +91,12 @@ def exigir_sessao(pagina: Page) -> None:
         raise ErroAutenticacao(_LOGIN_NECESSARIO)
 
 
-def login_interativo(pasta_perfil: Path) -> None:
-    with abrir_navegador(pasta_perfil) as contexto:
+def login_interativo(pasta_perfil: Path, *, navegador: str = NAVEGADOR_PADRAO) -> None:
+    with abrir_navegador(pasta_perfil, navegador=navegador) as contexto:
         pagina = contexto.pages[0] if contexto.pages else contexto.new_page()
         pagina.goto(CONTA_GOOGLE, wait_until="domcontentloaded")
         try:
-            input("Conclua o login Google no navegador e pressione ENTER neste terminal: ")
+            input("Depois de concluir o login Google ou ver um erro no navegador, pressione ENTER neste terminal: ")
         except EOFError:
             raise ErroAutenticacao("Execute login em um terminal interativo.") from None
 

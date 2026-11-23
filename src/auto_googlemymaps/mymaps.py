@@ -65,7 +65,9 @@ def abrir_mapa(pagina: Page, mapa: Mapa) -> None:
         _confirmar_destino(pagina, mapa)
         if resposta is None or not resposta.ok:
             if resposta is not None and resposta.status == 401:
-                raise ErroAutenticacao("Sessão Google não autorizada. Execute login com o mesmo --perfil-dir.")
+                raise ErroAutenticacao(
+                    "Sessão Google não autorizada. Execute login com o mesmo --navegador e --perfil-dir."
+                )
             raise ErroMapa("O Google não abriu o editor. Confira o acesso de edição ao mapa.")
         pagina.get_by_role("button", name=_ADICIONAR_CAMADA).wait_for(state="visible")
         _confirmar_destino(pagina, mapa)

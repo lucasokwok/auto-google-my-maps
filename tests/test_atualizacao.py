@@ -1,5 +1,6 @@
 import json
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -69,6 +70,11 @@ def test_filtra_um_mapa_e_valida_todas_as_camadas_antes_de_enviar(execucao, tmp_
 def test_rejeita_mapa_desconhecido(execucao):
     assert main(["atualizar", "--mapa", "DESCONHECIDO"]) == 2
     execucao.abrir_navegador.assert_not_called()
+
+
+def test_atualizar_com_edge_usa_o_mesmo_perfil_padrao_do_login(execucao):
+    assert main(["atualizar", "--mapa", "B", "--navegador", "edge"]) == 0
+    execucao.abrir_navegador.assert_called_once_with(Path("runtime/google_profile_edge"), navegador="edge")
 
 
 def test_dados_invalidos_bloqueiam_mapa_sem_impedir_validos(execucao, tmp_path):

@@ -22,6 +22,7 @@ def pagina():
     pagina.goto.return_value.ok = True
     pagina.locator.return_value.count.return_value = 0
     pagina.get_by_role.return_value.first.is_visible.return_value = False
+    pagina.get_by_text.return_value.first.is_visible.return_value = False
     return pagina
 
 
