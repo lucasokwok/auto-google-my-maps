@@ -2,7 +2,7 @@
 
 Automação local em Python e Playwright para atualizar pontos em **camadas existentes** do Google My Maps. O aplicativo reimporta os CSVs pelo recurso **Atualizar itens correspondentes**, preservando os mapas, seus links e as configurações de compartilhamento.
 
-**Estado da integração.** A validação local e o fluxo de atualização têm testes automatizados. A reimportação ainda precisa ser validada em um editor Google My Maps autenticado. Faça a primeira execução em mapas de teste com dados fictícios.
+**Estado da integração.** O reaproveitamento de uma sessão Google criada manualmente no Edge foi confirmado em um teste no Windows. A validação local e o fluxo de atualização têm testes automatizados. A reimportação ainda precisa ser validada em um editor Google My Maps autenticado. Faça a primeira execução em mapas de teste com dados fictícios.
 
 ## Instalação
 
@@ -66,29 +66,36 @@ As opções `--config` e `--mapas-dir` substituem os caminhos locais padrão. Us
 
 A atualização registra progresso e erros no terminal e em `logs/atualizacao.log`. Os logs contêm nomes de mapas e camadas, contagens e mensagens sanitizadas. O código de saída é `0` para sucesso, `1` para falha operacional ou de validação dos CSVs, `2` para erro de configuração, uso ou abertura do log e `130` para interrupção no login ou na atualização. [Segurança e privacidade](docs/SEGURANCA.md)
 
-## Teste com o Microsoft Edge
+## Login confirmado com o Edge no Windows
 
-Com o Edge instalado e o Playwright disponível no ambiente Python, faça o login manual.
+O teste no Windows confirmou o seguinte procedimento. Abra o Edge diretamente com um perfil dedicado em `%LOCALAPPDATA%`. No Prompt de Comando, com o `.venv` ativo, execute os comandos abaixo.
 
-```bash
-python -m auto_googlemymaps login --navegador edge
+```bat
+set "PERFIL_MYMAPS=%LOCALAPPDATA%\auto-google-my-maps\edge-profile"
+start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --user-data-dir="%PERFIL_MYMAPS%" "https://myaccount.google.com/"
 ```
 
-Se o terminal confirmar o login, teste a atualização de um único mapa usando o mesmo navegador.
+Entre manualmente na conta Google com acesso de edição. Feche a janela desse perfil e, no mesmo terminal, confirme que o Playwright consegue reutilizar a sessão.
 
-```bash
-python -m auto_googlemymaps atualizar --navegador edge --mapa MAPA_TESTE_RIO_DE_JANEIRO
+```bat
+python -m auto_googlemymaps login --navegador edge --perfil-dir "%PERFIL_MYMAPS%"
 ```
 
-O Google também pode recusar a autenticação no Edge quando ele é controlado pelo Playwright. Se a tela exibir **Este navegador ou app pode não ser seguro**, pressione Enter para encerrar a tentativa com uma mensagem no terminal. [Ajuda da Conta do Google](https://support.google.com/accounts/answer/7675428?co=GENIE.Platform%3DDesktop&hl=pt-BR)
+Quando a página **Minha Conta** abrir autenticada, pressione Enter no terminal. A mensagem `Login Google confirmado. Perfil salvo localmente.` confirma que a sessão foi reutilizada. Mantenha o perfil dedicado no mesmo computador. [Detalhes do perfil e recuperação de sessão](docs/PLAYWRIGHT.md#sessão-dedicada-no-edge-do-windows)
 
 ## Primeiro teste manual
 
-1. Prepare no Google My Maps os três mapas fictícios com uma camada no Rio de Janeiro, duas em Belo Horizonte e cinco em São Paulo. Use os nomes exatos dos CSVs para as camadas, incluindo `.csv`.
-2. No mapa de uma camada, escolha dados de teste com pelo menos um ID mantido e alterado, um ID novo e um ID que ficará ausente no CSV atualizado. Aplique uma personalização ao ponto mantido para poder conferi-la depois.
-3. Cadastre os links de edição em `config/mapas.json`. Execute `validar` e `login`, depois rode `atualizar --mapa MAPA_TESTE_RIO_DE_JANEIRO` como nos exemplos acima.
-4. Confira no editor e no log a conclusão. Reabra o mapa e verifique os dados e as coordenadas do ponto mantido, a inclusão do novo, a remoção do ausente e a preservação do estilo. Se o resultado for indeterminado, confira a camada antes de repetir.
-5. Repita com `--mapa MAPA_TESTE_BELO_HORIZONTE` e `--mapa MAPA_TESTE_SAO_PAULO`. Após validar os três casos, execute o lote com `atualizar`.
+1. Cadastre o link de edição de `MAPA_TESTE_RIO_DE_JANEIRO` em `config/mapas.json`. Confirme que o mapa tem a camada `pontos_01.csv` e que a coluna configurada para correspondência existe na camada.
+2. Para verificar os efeitos da reimportação, use dados fictícios com um ID mantido e alterado, um ID novo e um ID ausente do CSV atualizado. Aplique um estilo personalizado ao ponto mantido para conferi-lo depois. Se a mesma versão do CSV já tiver sido importada, use uma versão com diferenças conhecidas para esse teste.
+3. Execute `validar` e `planejar`. Confirme que o Rio aparece com uma camada válida. Depois do login confirmado, teste só esse mapa. Para o perfil dedicado no Edge do Windows, use o comando abaixo.
+
+   ```bat
+   set "PERFIL_MYMAPS=%LOCALAPPDATA%\auto-google-my-maps\edge-profile"
+   python -m auto_googlemymaps atualizar --navegador edge --perfil-dir "%PERFIL_MYMAPS%" --mapa MAPA_TESTE_RIO_DE_JANEIRO
+   ```
+
+4. Confira no terminal ou em `logs/atualizacao.log` se apareceu `pontos_01.csv — atualização confirmada pela interface`. Reabra o mapa e confira a alteração, a inclusão e a remoção pelos IDs e a preservação do estilo. Se aparecer `Resultado indeterminado`, confira o estado da camada antes de tentar de novo.
+5. Depois de confirmar o Rio, teste Belo Horizonte, com duas camadas, e São Paulo, com cinco. Mantenha os mesmos parâmetros do navegador e do perfil e altere apenas `--mapa`. Para rodar o lote após validar os três casos, retire `--mapa`.
 
 ## Testes e documentação
 

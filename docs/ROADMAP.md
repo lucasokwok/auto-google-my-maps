@@ -11,7 +11,8 @@
 
 ## Homologação no Google My Maps
 
-- [ ] Confirmar login manual, reutilização do perfil e detecção de sessão expirada.
+- [x] Confirmar o reaproveitamento da sessão na página Minha Conta, criada manualmente no Edge com perfil dedicado no Windows.
+- [ ] Confirmar a detecção de sessão expirada no editor e o reinício após renovar a sessão.
 - [ ] Confirmar os seletores do editor, dos menus, do Picker e do assistente de correspondência.
 - [ ] Identificar os sinais reais de sucesso e falha e confirmar que podem ser detectados.
 - [ ] Executar o procedimento do README nos mapas fictícios de uma, duas e cinco camadas.
