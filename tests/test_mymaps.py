@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from playwright.sync_api import Error, Page, TimeoutError
@@ -101,14 +101,51 @@ def test_distingue_titulo_ausente_de_menu_sem_associacao(pagina):
     assert "DETALHE_FICTICIO" not in str(erro.value)
 
 
-def test_envia_os_bytes_validados_com_o_nome_original(pagina):
-    picker = pagina.locator.return_value.and_.return_value.content_frame
-    picker.get_by_role.return_value.is_visible.return_value = False
+def test_procurar_abre_o_seletor_e_recebe_os_bytes_validados(pagina):
+    iframe = pagina.locator.return_value.and_.return_value
+    iframe.is_visible.return_value = False
+    picker = iframe.content_frame
+    pagina.expect_file_chooser.return_value = MagicMock()
+    escolha = pagina.expect_file_chooser.return_value.__enter__.return_value
+
     mymaps._enviar_csv(pagina, CAMADA)
-    picker.locator.assert_called_once_with('input[type="file"]')
-    picker.locator.return_value.set_input_files.assert_called_once_with({
+    pagina.expect_file_chooser.assert_called_once()
+    picker.get_by_role.assert_any_call("button", name=mymaps._PROCURAR)
+    escolha.value.set_files.assert_called_once_with({
         "name": CAMADA.nome, "mimeType": "text/csv", "buffer": CAMADA.conteudo,
     })
+
+
+def test_upload_pode_fechar_picker_automaticamente():
+    iframe, selecionar = Mock(), Mock()
+    iframe.is_visible.return_value = True
+    selecionar.is_visible.return_value = False
+
+    mymaps._aguardar_fim_do_upload(iframe, selecionar)
+    assert iframe.wait_for.call_args.kwargs["state"] == "hidden"
+    selecionar.click.assert_not_called()
+
+
+def test_upload_explicito_aguarda_selecionar_ser_habilitado():
+    iframe, selecionar = Mock(), Mock()
+    iframe.is_visible.return_value = True
+    selecionar.is_visible.return_value = True
+    selecionar.is_enabled.side_effect = [False, True]
+    iframe.wait_for.side_effect = [TimeoutError("Picker ainda aberto"), None]
+
+    mymaps._aguardar_fim_do_upload(iframe, selecionar)
+    selecionar.click.assert_called_once()
+    assert iframe.wait_for.call_count == 2
+
+
+def test_picker_aberto_apos_upload_e_falha(pagina, monkeypatch):
+    pagina.expect_file_chooser.return_value = MagicMock()
+    aguardar_upload = Mock(side_effect=TimeoutError("DETALHE_FICTICIO"))
+    monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
+
+    with pytest.raises(mymaps.ErroMapa, match="continuou aberto após o envio") as erro:
+        mymaps._enviar_csv(pagina, CAMADA)
+    assert "DETALHE_FICTICIO" not in str(erro.value)
 
 
 @pytest.mark.parametrize("ocorrencias", [0, 2])
