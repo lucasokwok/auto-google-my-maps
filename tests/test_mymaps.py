@@ -254,6 +254,54 @@ def test_upload_explicito_aguarda_selecionar_ser_habilitado():
     assert iframe.wait_for.call_count == 2
 
 
+@pytest.mark.parametrize("acao", ["click", "wait_for"])
+def test_upload_identifica_o_picker_ainda_visivel_depois_do_prazo(acao):
+    iframe, selecionar = Mock(), Mock()
+    iframe.is_visible.return_value = True
+    selecionar.is_visible.return_value = selecionar.is_enabled.return_value = True
+    espera = selecionar.click if acao == "click" else iframe.wait_for
+    espera.side_effect = TimeoutError("Picker ainda aberto")
+
+    with pytest.raises(mymaps._SeletorUploadPendente):
+        mymaps._aguardar_fim_do_upload(iframe, selecionar)
+
+
+@pytest.mark.parametrize(("status", "cabecalhos", "tipo"), [
+    (200, {}, mymaps.ErroUploadTemporario),
+    (204, {}, mymaps.ErroUploadTemporario),
+    (429, {}, mymaps.ErroMapa),
+    (503, {"retry-after": "120"}, mymaps.ErroMapa),
+])
+def test_picker_que_continua_aberto_pode_repetir_mesmo_apos_2xx(
+    pagina, camada_local, monkeypatch, status, cabecalhos, tipo,
+):
+    eventos = {}
+    pagina.on.side_effect = eventos.__setitem__
+    picker = pagina.locator.return_value.and_.return_value.content_frame
+    selecionar, procurar, progresso, alerta = Mock(), Mock(), Mock(), Mock()
+    botoes = {mymaps._SELECIONAR: selecionar, mymaps._PROCURAR: procurar}
+    outros = {"progressbar": progresso, "alert": alerta}
+    picker.get_by_role.side_effect = lambda role, name=None: botoes.get(name, outros.get(role, Mock()))
+    selecionar.first.is_visible.return_value = False
+    procurar.first.is_visible.return_value = True
+    progresso.first.is_visible.return_value = alerta.first.is_visible.return_value = False
+    estado = picker.locator.return_value.evaluate_handle.return_value
+    estado.json_value.return_value = {"mudou": True, "corresponde": True}
+    envio = SimpleNamespace(method="POST", url="https://docs.google.com/upload?token=DETALHE_FICTICIO")
+
+    def aguardar_upload(iframe, selecionar):
+        eventos["response"](SimpleNamespace(request=envio, status=status, headers=cabecalhos))
+        raise mymaps._SeletorUploadPendente("Picker permaneceu aberto")
+
+    monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
+    with pytest.raises(mymaps.ErroMapa) as erro:
+        mymaps._enviar_csv(pagina, camada_local)
+    assert type(erro.value) is tipo
+    assert f"HTTP do upload: {status}." in str(erro.value)
+    assert "Selecionar: ausente, Procurar: visível, progresso: ausente, alerta: ausente." in str(erro.value)
+    assert "DETALHE_FICTICIO" not in str(erro.value)
+
+
 def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local, monkeypatch):
     eventos = {}
     pagina.on.side_effect = eventos.__setitem__

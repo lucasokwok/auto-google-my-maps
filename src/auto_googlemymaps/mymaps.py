@@ -69,6 +69,10 @@ class ErroUploadTemporario(ErroMapa):
     """Falha na seleção ou no envio do CSV que admite uma nova tentativa."""
 
 
+class _SeletorUploadPendente(TimeoutError):
+    """O Picker continuou aberto até o prazo, antes do assistente de correspondência."""
+
+
 @dataclass(frozen=True)
 class CamadaRemota:
     cabecalho: Locator
@@ -188,6 +192,21 @@ def _diagnosticar_campo_csv(estado: JSHandle | None) -> str:
     return " O estado do campo de arquivo ficou indisponível."
 
 
+def _diagnosticar_picker(picker: FrameLocator, selecionar: Locator) -> str:
+    with suppress(Error):
+        estado_selecionar = "ausente"
+        if selecionar.first.is_visible():
+            estado_selecionar = "habilitado" if selecionar.first.is_enabled(timeout=500) else "desabilitado"
+        procurar = "visível" if picker.get_by_role("button", name=_PROCURAR).first.is_visible() else "ausente"
+        progresso = "visível" if picker.get_by_role("progressbar").first.is_visible() else "ausente"
+        alerta = "visível" if picker.get_by_role("alert").first.is_visible() else "ausente"
+        return (
+            f" Seletor aberto — Selecionar: {estado_selecionar}, Procurar: {procurar}, "
+            f"progresso: {progresso}, alerta: {alerta}."
+        )
+    return " O estado dos controles do seletor ficou indisponível."
+
+
 def _soltar_arquivo(pagina: Page, zona: Locator, arquivo: Path) -> None:
     zona.hover()
     caixa = zona.bounding_box()
@@ -211,6 +230,7 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
     upload = picker.get_by_role("option", name=_ENVIAR).or_(picker.get_by_role("tab", name=_ENVIAR)).or_(
         picker.get_by_role("button", name=_ENVIAR)
     )
+    selecionar = picker.get_by_role("button", name=_SELECIONAR)
 
     quadro = None
     status_http: set[int] = set()
@@ -283,28 +303,32 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
                 campo.set_input_files(camada.arquivo)
 
         etapa = "confirmar o fim do envio no seletor do Google"
-        _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
+        _aguardar_fim_do_upload(iframe, selecionar)
         _conferir_csv_local(camada)
     except (Error, OSError) as erro:
         exigir_sessao(pagina)
         _conferir_csv_local(camada)
         expirou = isinstance(erro, TimeoutError)
+        seletor_pendente = isinstance(erro, _SeletorUploadPendente)
         motivo = "Tempo esgotado" if expirou else "Falha do navegador"
         codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
         erros_de_rede = f" ({', '.join(sorted(codigos_de_rede))})" if codigos_de_rede else ""
         envio_transitorio = bool(status_envio & _HTTP_UPLOAD_TRANSITORIOS or falhas_envio & _REDE_UPLOAD_TRANSITORIOS)
         houve_aceite = any(200 <= codigo < 300 or codigo == 308 for codigo in status_envio)
         houve_recusa = any(400 <= codigo < 500 and codigo not in _HTTP_UPLOAD_TRANSITORIOS for codigo in status_http)
+        prazo_antes_da_entrega = expirou and not envio_iniciado
+        # Uma resposta de sucesso do upload ainda pode deixar o Picker aberto, antes de Concluir.
+        erro_transitorio = seletor_pendente or (not houve_aceite and (envio_transitorio or prazo_antes_da_entrega))
         pode_repetir = (
-            (envio_transitorio or (expirou and not envio_iniciado))
-            and not (houve_aceite or houve_recusa or servidor_pediu_espera or pagina.is_closed())
+            erro_transitorio and not (houve_recusa or servidor_pediu_espera or pagina.is_closed())
         )
         tipo = ErroUploadTemporario if pode_repetir else ErroMapa
         espera = " O servidor pediu um intervalo antes de nova tentativa." if servidor_pediu_espera else ""
+        controles = _diagnosticar_picker(picker, selecionar) if seletor_pendente else ""
         raise tipo(
             f"{motivo} ao {etapa}. "
             f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}{erros_de_rede}."
-            f"{_diagnosticar_campo_csv(estado_campo)}{espera}"
+            f"{_diagnosticar_campo_csv(estado_campo)}{controles}{espera}"
         ) from None
     finally:
         if estado_campo is not None:
@@ -320,21 +344,23 @@ def _aguardar_fim_do_upload(iframe: Locator, selecionar: Locator) -> None:
     while (restante := int((prazo - monotonic()) * 1000)) > 0:
         if not iframe.is_visible():
             return
+        confirmar = False
         try:
             confirmar = selecionar.is_visible() and selecionar.is_enabled(timeout=min(restante, 500))
             if confirmar:
                 selecionar.click(timeout=restante)
-        except Error:
-            if iframe.is_visible():
-                raise
-            return
-        try:
+            restante = max(1, int((prazo - monotonic()) * 1000))
             iframe.wait_for(state="hidden", timeout=restante if confirmar else min(restante, 500))
             return
         except TimeoutError:
             if confirmar:
                 break
-    raise TimeoutError("O seletor de arquivos continuou aberto após o envio do CSV.")
+        except Error:
+            if iframe.is_visible():
+                raise
+            return
+    if iframe.is_visible():
+        raise _SeletorUploadPendente("O seletor de arquivos continuou aberto após o envio do CSV.")
 
 
 def _selecionar_coluna(dialogo: Locator, rotulo: re.Pattern[str], coluna: str) -> None:
