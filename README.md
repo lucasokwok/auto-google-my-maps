@@ -66,6 +66,8 @@ As opções `--config` e `--mapas-dir` substituem os caminhos locais padrão. Us
 
 A atualização registra progresso e erros no terminal e em `logs/atualizacao.log`. Os logs contêm nomes de mapas e camadas, contagens e mensagens sanitizadas. O código de saída é `0` para sucesso, `1` para falha operacional ou de validação dos CSVs, `2` para erro de configuração, uso ou abertura do log e `130` para interrupção no login ou na atualização. [Segurança e privacidade](docs/SEGURANCA.md)
 
+Se o My Maps exibir **Ocorreu um erro. Sua última ação foi revertida.** após **Concluir**, o programa pode repetir a atualização em uma nova página, com até cinco retentativas por camada.
+
 Acrescente `--pausar-em-erro` ao comando `atualizar` para inspecionar a página após uma falha no navegador. O terminal mostra qual mapa e camada estavam em processamento. Pressione **Enter** no terminal para retomar ou **Ctrl+C** para interromper.
 
 ## Login confirmado com o Edge no Windows
