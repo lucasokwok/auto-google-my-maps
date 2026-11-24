@@ -1,16 +1,21 @@
 """Gera três mapas fictícios brasileiros para testar a reimportação no My Maps.
 
-Cria, ao lado deste script, uma pasta para cada mapa, contendo sempre
-pontos_01.csv, pontos_02.csv, ..., pontos_05.csv.
+Cria, ao lado deste script, uma pasta para cada mapa, contendo um CSV
+por camada, de pontos_01.csv até pontos_05.csv conforme o mapa.
 
 Exemplos:
-    python gerar_mapas_ficticios.py
-    python gerar_mapas_ficticios.py --rodada 2
-    python gerar_mapas_ficticios.py --rodada 3 --pontos-por-camada 40
+    python gerar_mapas.py
+    python gerar_mapas.py --rodada 2
+    python gerar_mapas.py --rodada 3 --pontos-por-camada 40
+    python gerar_mapas.py --teste-rio-dois-pontos
 
 Use a mesma quantidade de pontos por camada em todas as rodadas. A rodada 2
 remove 20% dos IDs da rodada 1; a rodada 3 remove 40%. Os demais dados são
 reproduzíveis, permitindo testar a exclusão de pontos no mesmo mapa.
+
+O teste de dois pontos grava apenas o CSV do Rio de Janeiro. Use a quantidade
+e a semente da base importada para manter o último ponto dessa base. O segundo
+ponto tem um ID reservado, fora da faixa usada nas rodadas normais.
 
 Os nomes, idades, observações e identificadores são fictícios. As coordenadas
 são aleatórias dentro de pequenas regiões urbanas brasileiras e não indicam
@@ -21,6 +26,8 @@ import argparse
 import csv
 import random
 from pathlib import Path
+
+MAX_PONTOS_POR_CAMADA = 2_000
 
 MAPAS = (
     {
@@ -97,12 +104,18 @@ def registro_ficticio(mapa: dict, camada: int, indice: int, seed: int) -> dict:
     }
 
 
-def gerar(rodada: int, pontos_por_camada: int, seed: int) -> None:
+def gerar(rodada: int, pontos_por_camada: int, seed: int, *, teste_rio_dois_pontos: bool = False) -> None:
     diretorio_base = Path(__file__).resolve().parent
     quantidade_removida = (rodada - 1) * pontos_por_camada // 5
+    mapas = MAPAS
+    indices = range(quantidade_removida + 1, pontos_por_camada + 1)
+    if teste_rio_dois_pontos:
+        mapas = tuple(mapa for mapa in MAPAS if mapa["uf"] == "RJ")
+        # O último ID aparece em todas as rodadas. O novo fica fora da faixa normal.
+        indices = (indices[-1], MAX_PONTOS_POR_CAMADA + 1)
     total = 0
 
-    for mapa in MAPAS:
+    for mapa in mapas:
         pasta = diretorio_base / mapa["nome"]
         pasta.mkdir(parents=True, exist_ok=True)
         for camada in range(1, mapa["camadas"] + 1):
@@ -110,15 +123,15 @@ def gerar(rodada: int, pontos_por_camada: int, seed: int) -> None:
             with destino.open("w", newline="", encoding="utf-8-sig") as arquivo:
                 escritor = csv.DictWriter(arquivo, fieldnames=COLUNAS)
                 escritor.writeheader()
-                for indice in range(quantidade_removida + 1, pontos_por_camada + 1):
+                for indice in indices:
                     escritor.writerow(registro_ficticio(mapa, camada, indice, seed))
                     total += 1
         print(
             f"{mapa['nome']}: {mapa['camadas']} CSVs | "
-            f"{pontos_por_camada - quantidade_removida} pontos por camada"
+            f"{len(indices)} pontos por camada"
         )
 
-    print(f"\nRodada {rodada}: {total} pontos fictícios em 3 mapas.")
+    print(f"\nRodada {rodada}: {total} pontos fictícios em {len(mapas)} mapa(s).")
     print(f"Pastas criadas em: {diretorio_base}")
     print("URLs dos mapas: cadastre manualmente na configuração do projeto de automação.")
 
@@ -131,10 +144,12 @@ def main() -> None:
                         help="Quantidade de pontos na rodada 1, de 1 a 2000 (padrão: 50).")
     parser.add_argument("--seed", type=int, default=2026,
                         help="Semente dos dados fictícios (padrão: 2026).")
+    parser.add_argument("--teste-rio-dois-pontos", action="store_true",
+                        help="Grava apenas o CSV do Rio, com um ponto da base e um ponto novo.")
     args = parser.parse_args()
-    if not 1 <= args.pontos_por_camada <= 2000:
-        parser.error("--pontos-por-camada deve estar entre 1 e 2000.")
-    gerar(args.rodada, args.pontos_por_camada, args.seed)
+    if not 1 <= args.pontos_por_camada <= MAX_PONTOS_POR_CAMADA:
+        parser.error(f"--pontos-por-camada deve estar entre 1 e {MAX_PONTOS_POR_CAMADA}.")
+    gerar(args.rodada, args.pontos_por_camada, args.seed, teste_rio_dois_pontos=args.teste_rio_dois_pontos)
 
 
 if __name__ == "__main__":
