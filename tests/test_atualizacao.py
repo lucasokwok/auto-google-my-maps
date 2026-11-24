@@ -96,21 +96,48 @@ def test_nenhum_csv_valido_nao_inicia_navegador(execucao, tmp_path):
     execucao.abrir_navegador.assert_not_called()
 
 
-def test_camada_ausente_impede_qualquer_envio_no_mapa(execucao):
-    execucao.localizar.side_effect = [CAMADAS[0], ErroMapa("Camada ausente")]
+def test_camada_ausente_e_registrada_e_outra_camada_continua(execucao, tmp_path):
+    execucao.localizar.side_effect = [ErroMapa("Camada ausente"), CAMADAS[1]]
     assert main(["atualizar", "--mapa", "A"]) == 1
-    execucao.reimportar.assert_not_called()
+    execucao.reimportar.assert_called_once()
+    assert execucao.reimportar.call_args.args[3].nome == CAMADAS[1]
     execucao.contexto.new_page.return_value.close.assert_called_once()
-
-
-def test_falha_de_upload_interrompe_mapa_e_continua_nos_demais(execucao, tmp_path):
-    execucao.reimportar.side_effect = [ErroMapa("Falha no seletor de upload")] + [None] * 6
-    assert main(["atualizar"]) == 1
-    assert [chamada.args[1].nome for chamada in execucao.reimportar.call_args_list] == ["A", "B"] + ["C"] * 5
-    assert execucao.contexto.new_page.return_value.close.call_count == 3
     log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
-    assert "A — pontos_01.csv — Falha no seletor de upload (0/2 camada(s) confirmada(s))" in log
+    assert "A — pontos_01.csv — verificação da camada existente — Camada ausente" in log
+    assert "A — pontos_02.csv — atualização confirmada" in log
+    assert "A — atualização encerrada com falhas (1/2 camada(s) confirmada(s))" in log
+
+
+@pytest.mark.parametrize("mensagem", ["Falha no seletor de upload", "Resultado indeterminado"])
+def test_falha_de_camada_reabre_editor_e_continua_sem_repetir(execucao, tmp_path, mensagem):
+    paginas = [Mock() for _ in range(4)]
+    execucao.contexto.new_page.side_effect = paginas
+    execucao.reimportar.side_effect = [ErroMapa(mensagem)] + [None] * 7
+    assert main(["atualizar"]) == 1
+    tentativas = [chamada.args for chamada in execucao.reimportar.call_args_list]
+    assert [args[1].nome for args in tentativas] == ["A", "A", "B"] + ["C"] * 5
+    assert [(args[0], args[3].nome) for args in tentativas[:2]] == list(zip(paginas[:2], CAMADAS[:2]))
+    execucao.localizar.assert_any_call(paginas[1], CAMADAS[1])
+    for pagina in paginas:
+        pagina.close.assert_called_once()
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    assert f"A — pontos_01.csv — {mensagem} (0/2 camada(s) confirmada(s))" in log
+    assert "A — pontos_02.csv — atualização confirmada" in log
     assert "C — atualização concluída" in log
+
+
+def test_falha_ao_reabrir_editor_e_registrada_e_restante_continua(execucao, tmp_path):
+    paginas = [Mock() for _ in range(3)]
+    execucao.contexto.new_page.side_effect = paginas
+    execucao.abrir_mapa.side_effect = [None, ErroMapa("Editor indisponível"), None]
+    execucao.reimportar.side_effect = [ErroMapa("Falha inicial"), None, None, None]
+    assert main(["atualizar", "--mapa", "C"]) == 1
+    tentativas = [chamada.args for chamada in execucao.reimportar.call_args_list]
+    assert [args[3].nome for args in tentativas] == [CAMADAS[0], *CAMADAS[2:]]
+    assert [args[0] for args in tentativas] == [paginas[0], paginas[2], paginas[2], paginas[2]]
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    assert "C — pontos_02.csv — Editor indisponível" in log
+    assert "C — atualização encerrada com falhas (3/5 camada(s) confirmada(s))" in log
 
 
 def test_sessao_expirada_interrompe_lote(execucao, tmp_path):
@@ -120,3 +147,12 @@ def test_sessao_expirada_interrompe_lote(execucao, tmp_path):
     execucao.reimportar.assert_not_called()
     log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
     assert "Atualização interrompida — Sessão expirada. Execute login." in log
+
+
+def test_sessao_expirada_em_camada_interrompe_lote(execucao, tmp_path):
+    execucao.reimportar.side_effect = ErroAutenticacao("Sessão expirada. Execute login.")
+    assert main(["atualizar"]) == 1
+    execucao.reimportar.assert_called_once()
+    execucao.abrir_mapa.assert_called_once()
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    assert "A — pontos_01.csv — Sessão expirada. Execute login." in log

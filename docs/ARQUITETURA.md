@@ -17,9 +17,9 @@ A aplicação usa CSVs locais para atualizar pontos de camadas já cadastradas n
 
 1. Valide o cadastro completo e selecione o mapa solicitado quando houver `--mapa`.
 2. Para cada mapa selecionado, valide todos os seus CSVs locais. Erros em um mapa impedem a abertura daquele mapa. O navegador é iniciado após a primeira validação bem-sucedida.
-3. Abra cada mapa em uma página própria do mesmo perfil persistente. Confirme que o editor corresponde ao `mid` do cadastro e que todos os nomes de camada esperados têm um menu associado.
-4. Reimporte e verifique uma camada por vez. Apenas as camadas com CSV local são selecionadas.
+3. Abra cada mapa em uma página própria do mesmo perfil persistente. Confirme que o editor corresponde ao `mid` do cadastro e verifique o menu associado a cada camada esperada.
+4. Reimporte e verifique uma camada por vez, entre as que passaram pela checagem no editor.
 
-Resultados são registrados por camada. Em caso de falha, feche a página do mapa e siga para os demais. Camadas já concluídas podem ter sido salvas antes da falha. Se o Google exigir autenticação ou uma verificação de segurança, a execução inteira é interrompida.
+Resultados são registrados por mapa e camada. Se uma reimportação falhar, a próxima camada abre o editor em uma nova página para começar sem diálogos pendentes. Uma camada com falha ou resultado indeterminado fica registrada para conferência. Se alguma camada falhar, o mapa registra a contagem confirmada e a execução retorna código `1` depois de processar as demais. Se o Google exigir autenticação ou uma verificação de segurança, a execução inteira é interrompida.
 
 Os testes verificam validação local, filtragem, ordem das checagens, isolamento de falhas e o tratamento de operações do navegador com mocks.

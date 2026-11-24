@@ -20,33 +20,61 @@ def _atualizar_mapa(
     pagina = contexto.new_page()
     operacao = "acesso ao editor"
     concluidas = 0
-    log.info("%s — iniciando atualização de %d camada(s)", mapa.nome, len(resultado.camadas))
+    total = len(resultado.camadas)
+
+    def registrar_falha(erro: ErroMapa | ErroAutenticacao) -> None:
+        log.error(
+            "%s — %s — %s (%d/%d camada(s) confirmada(s))",
+            mapa.nome, operacao, erro, concluidas, total,
+        )
+
+    log.info("%s — iniciando atualização de %d camada(s)", mapa.nome, total)
     try:
         abrir_mapa(pagina, mapa)
         remotas = []
         for camada in resultado.camadas:
             operacao = f"{camada.nome} — verificação da camada existente"
-            remotas.append(localizar_camada(pagina, camada.nome))
+            try:
+                remota = localizar_camada(pagina, camada.nome)
+            except ErroMapa as erro:
+                registrar_falha(erro)
+                continue
+            remotas.append((camada, remota))
 
-        for camada, remota in zip(resultado.camadas, remotas):
+        pagina_inicial = pagina
+        reabrir_editor = False
+        for camada, remota in remotas:
             operacao = camada.nome
-            log.info("%s — %s — atualizando %d registro(s)", mapa.nome, operacao, camada.quantidade)
-            reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
+            try:
+                if reabrir_editor:
+                    pagina.close()
+                    pagina = contexto.new_page()
+                    abrir_mapa(pagina, mapa)
+                    reabrir_editor = False
+                # Os seletores da checagem inicial apontam para a página original.
+                if pagina is not pagina_inicial:
+                    remota = localizar_camada(pagina, camada.nome)
+                log.info("%s — %s — atualizando %d registro(s)", mapa.nome, operacao, camada.quantidade)
+                reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
+            except ErroMapa as erro:
+                registrar_falha(erro)
+                reabrir_editor = True
+                continue
             concluidas += 1
             log.info("%s — %s — atualização confirmada pela interface", mapa.nome, operacao)
     except (ErroMapa, ErroAutenticacao) as erro:
-        log.error(
-            "%s — %s — %s (%d/%d camada(s) confirmada(s))",
-            mapa.nome, operacao, erro, concluidas, len(resultado.camadas),
-        )
+        registrar_falha(erro)
         if isinstance(erro, ErroAutenticacao):
             raise
         return False
     finally:
         pagina.close()
 
-    log.info("%s — atualização concluída", mapa.nome)
-    return True
+    if concluidas == total:
+        log.info("%s — atualização concluída", mapa.nome)
+        return True
+    log.warning("%s — atualização encerrada com falhas (%d/%d camada(s) confirmada(s))", mapa.nome, concluidas, total)
+    return False
 
 
 def atualizar_mapas(
