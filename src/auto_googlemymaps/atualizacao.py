@@ -5,13 +5,16 @@ from __future__ import annotations
 from contextlib import ExitStack
 from logging import Logger
 from pathlib import Path
+from time import sleep
 
 from playwright.sync_api import BrowserContext
 
 from .configuracao import Configuracao, Mapa
 from .csvs import ResultadoMapa, validar_mapa
-from .mymaps import ErroMapa, abrir_mapa, localizar_camada, reimportar_camada
+from .mymaps import ErroMapa, ErroUploadTemporario, abrir_mapa, localizar_camada, reimportar_camada
 from .navegador import NAVEGADOR_PADRAO, ErroAutenticacao, abrir_navegador
+
+_PAUSA_UPLOAD_SEGUNDOS = 2
 
 
 def _atualizar_mapa(
@@ -45,23 +48,32 @@ def _atualizar_mapa(
         reabrir_editor = False
         for camada, remota in remotas:
             operacao = camada.nome
-            try:
-                if reabrir_editor:
-                    pagina.close()
-                    pagina = contexto.new_page()
-                    abrir_mapa(pagina, mapa)
-                    reabrir_editor = False
-                # Os seletores da checagem inicial apontam para a página original.
-                if pagina is not pagina_inicial:
-                    remota = localizar_camada(pagina, camada.nome)
-                log.info("%s — %s — atualizando %d registro(s)", mapa.nome, operacao, camada.quantidade)
-                reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
-            except ErroMapa as erro:
-                registrar_falha(erro)
-                reabrir_editor = True
-                continue
-            concluidas += 1
-            log.info("%s — %s — atualização confirmada pela interface", mapa.nome, operacao)
+            for tentativa in (1, 2):
+                try:
+                    if reabrir_editor:
+                        pagina.close()
+                        pagina = contexto.new_page()
+                        abrir_mapa(pagina, mapa)
+                        reabrir_editor = False
+                    # Os seletores da checagem inicial apontam para a página original.
+                    if pagina is not pagina_inicial:
+                        remota = localizar_camada(pagina, camada.nome)
+                    log.info("%s — %s — atualizando %d registro(s)", mapa.nome, operacao, camada.quantidade)
+                    reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
+                except ErroMapa as erro:
+                    reabrir_editor = True
+                    if tentativa == 1 and isinstance(erro, ErroUploadTemporario):
+                        log.warning(
+                            "%s — %s — %s Nova tentativa de upload em %d s.",
+                            mapa.nome, operacao, erro, _PAUSA_UPLOAD_SEGUNDOS,
+                        )
+                        sleep(_PAUSA_UPLOAD_SEGUNDOS)
+                        continue
+                    registrar_falha(erro)
+                else:
+                    concluidas += 1
+                    log.info("%s — %s — atualização confirmada pela interface", mapa.nome, operacao)
+                break
     except (ErroMapa, ErroAutenticacao) as erro:
         registrar_falha(erro)
         if isinstance(erro, ErroAutenticacao):

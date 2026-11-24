@@ -54,10 +54,19 @@ _IFRAME_PICKER = (
     'iframe[src^="https://drive.google.com/picker"], iframe[src^="https://www.google.com/picker"]'
 )
 _PRAZO_UPLOAD_SEGUNDOS = 60
+_HTTP_UPLOAD_TRANSITORIOS = {408, 500, 502, 503, 504}
+_REDE_UPLOAD_TRANSITORIOS = {
+    "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET", "ERR_CONNECTION_TIMED_OUT",
+    "ERR_NETWORK_CHANGED", "ERR_TIMED_OUT",
+}
 
 
 class ErroMapa(RuntimeError):
     """Falha de operação que pode ser registrada sem divulgar dados do mapa."""
+
+
+class ErroUploadTemporario(ErroMapa):
+    """Falha transitória observada no envio do arquivo, antes de concluir a reimportação."""
 
 
 @dataclass(frozen=True)
@@ -205,13 +214,25 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
     quadro = iframe.element_handle().content_frame()
 
     status_http: set[int] = set()
+    status_envio: set[int] = set()
     falhas_de_rede = 0
     codigos_de_rede: set[str] = set()
+    falhas_envio: set[str] = set()
+    servidor_pediu_espera = False
     estado_campo = None
 
     def registrar_resposta(resposta: Response) -> None:
-        if _requisicao_de_upload(resposta.request, quadro):
-            status_http.add(resposta.status)
+        nonlocal servidor_pediu_espera
+        requisicao = resposta.request
+        if not _requisicao_de_upload(requisicao, quadro):
+            return
+        status_http.add(resposta.status)
+        if _requisicao_de_upload(requisicao, None):
+            # Uma resposta à verificação CORS não confirma o recebimento do arquivo.
+            if requisicao.method != "OPTIONS":
+                status_envio.add(resposta.status)
+            if resposta.status >= 400 and resposta.headers.get("retry-after"):
+                servidor_pediu_espera = True
 
     def registrar_falha(requisicao: Request) -> None:
         nonlocal falhas_de_rede
@@ -219,7 +240,10 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
             falhas_de_rede += 1
             falha = requisicao.failure or ""
             if re.fullmatch(r"(?:net::)?ERR_[A-Z0-9_]+", falha):
-                codigos_de_rede.add(falha.removeprefix("net::"))
+                codigo = falha.removeprefix("net::")
+                codigos_de_rede.add(codigo)
+                if _requisicao_de_upload(requisicao, None):
+                    falhas_envio.add(codigo)
 
     pagina.on("response", registrar_resposta)
     pagina.on("requestfailed", registrar_falha)
@@ -245,10 +269,16 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
             exigir_sessao(pagina)
             codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
             erros_de_rede = f" ({', '.join(sorted(codigos_de_rede))})" if codigos_de_rede else ""
-            raise ErroMapa(
+            envio_transitorio = bool(status_envio & _HTTP_UPLOAD_TRANSITORIOS or falhas_envio & _REDE_UPLOAD_TRANSITORIOS)
+            houve_aceite = any(200 <= codigo < 300 or codigo == 308 for codigo in status_envio)
+            houve_recusa = any(400 <= codigo < 500 and codigo not in _HTTP_UPLOAD_TRANSITORIOS for codigo in status_http)
+            pode_repetir = envio_transitorio and not (houve_aceite or houve_recusa or servidor_pediu_espera)
+            tipo = ErroUploadTemporario if pode_repetir else ErroMapa
+            espera = " O servidor pediu um intervalo antes de nova tentativa." if servidor_pediu_espera else ""
+            raise tipo(
                 "O seletor de arquivos continuou aberto após o envio do CSV. "
                 f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}{erros_de_rede}."
-                f"{_diagnosticar_campo_csv(estado_campo)}"
+                f"{_diagnosticar_campo_csv(estado_campo)}{espera}"
             ) from None
 
         _conferir_csv_local(camada)

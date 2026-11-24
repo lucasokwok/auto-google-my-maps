@@ -20,6 +20,6 @@ A aplicação usa CSVs locais para atualizar pontos de camadas já cadastradas n
 3. Abra cada mapa em uma página própria do mesmo perfil persistente. Confirme que o editor corresponde ao `mid` do cadastro e verifique o menu associado a cada camada esperada.
 4. Reimporte e verifique uma camada por vez, entre as que passaram pela checagem no editor.
 
-Resultados são registrados por mapa e camada. Se uma reimportação falhar, a próxima camada abre o editor em uma nova página para começar sem diálogos pendentes. Uma camada com falha ou resultado indeterminado fica registrada para conferência. Se alguma camada falhar, o mapa registra a contagem confirmada e a execução retorna código `1` depois de processar as demais. Se o Google exigir autenticação ou uma verificação de segurança, a execução inteira é interrompida.
+Resultados são registrados por mapa e camada. Uma falha temporária de upload reconhecida antes de **Concluir** permite tentar a mesma camada uma vez em uma nova página. Se a camada terminar com falha ou resultado indeterminado, o programa registra o erro e abre uma nova página para a próxima camada. O mapa registra a contagem confirmada e a execução retorna código `1` depois de processar as demais. Se o Google exigir autenticação ou uma verificação de segurança, a execução inteira é interrompida.
 
 Os testes verificam validação local, filtragem, ordem das checagens, isolamento de falhas e o tratamento de operações do navegador com mocks.
