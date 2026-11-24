@@ -15,6 +15,7 @@
 - [ ] Confirmar a detecção de sessão expirada no editor e o reinício após renovar a sessão.
 - [x] Confirmar os seletores do editor, dos menus e do envio pelo Picker no mapa fictício do Rio.
 - [ ] Confirmar a seleção automática da coluna de identificação nos dois grupos do assistente.
-- [ ] Identificar os sinais reais de sucesso e falha e confirmar que podem ser detectados.
+- [x] Identificar a mensagem real de sucesso exibida após concluir a atualização no Edge.
+- [ ] Confirmar a detecção automática dos avisos de sucesso e falha no editor autenticado.
 - [ ] Executar o procedimento do README nos mapas fictícios de uma, duas e cinco camadas.
 - [ ] Reabrir os mapas e verificar adição, remoção, atualização e preservação do estilo dos itens correspondentes.
