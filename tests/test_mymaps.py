@@ -176,6 +176,62 @@ def test_csv_alterado_durante_upload_impede_reimportacao(pagina, camada_local, m
         mymaps._enviar_csv(pagina, camada_local)
 
 
+@pytest.mark.parametrize(("operacao", "etapa"), [
+    ("seletor", "aguardar a abertura do seletor de arquivos do Google"),
+    ("aba", 'abrir "Fazer upload" no seletor do Google'),
+    ("campo", "preparar o campo de arquivo do Picker"),
+    ("procurar", 'abrir o seletor nativo pelo botão "Procurar"'),
+])
+def test_prazo_esgotado_antes_de_entregar_csv_pode_repetir(pagina, camada_local, operacao, etapa):
+    iframe = pagina.locator.return_value.and_.return_value
+    picker = iframe.content_frame
+    campo = picker.locator.return_value
+    upload = picker.get_by_role.return_value.or_.return_value.or_.return_value
+    erro_ui = TimeoutError("DETALHE_FICTICIO")
+    if operacao == "procurar":
+        campo.wait_for.side_effect = erro_ui
+        pagina.expect_file_chooser.return_value = MagicMock()
+    acoes = {
+        "seletor": iframe.wait_for, "aba": upload.click, "campo": campo.evaluate_handle,
+        "procurar": picker.get_by_role.return_value.click,
+    }
+    acoes[operacao].side_effect = erro_ui
+
+    with pytest.raises(mymaps.ErroUploadTemporario) as erro:
+        mymaps._enviar_csv(pagina, camada_local)
+    assert f"Tempo esgotado ao {etapa}." in str(erro.value)
+    assert "DETALHE_FICTICIO" not in str(erro.value)
+    campo.set_input_files.assert_not_called()
+    assert pagina.remove_listener.call_count == 2
+
+
+def test_falha_na_entrega_do_csv_preserva_diagnostico_e_exige_sinal_para_repetir(pagina, camada_local):
+    picker = pagina.locator.return_value.and_.return_value.content_frame
+    campo = picker.locator.return_value
+    campo.set_input_files.side_effect = TimeoutError("DETALHE_FICTICIO")
+    campo.evaluate_handle.return_value.json_value.return_value = {"mudou": True, "corresponde": True}
+
+    with pytest.raises(mymaps.ErroMapa) as erro:
+        mymaps._enviar_csv(pagina, camada_local)
+    assert type(erro.value) is mymaps.ErroMapa
+    assert "Tempo esgotado ao entregar o CSV ao campo de arquivo do Picker." in str(erro.value)
+    assert "O campo recebeu um arquivo com o nome e tamanho esperados." in str(erro.value)
+    assert "DETALHE_FICTICIO" not in str(erro.value)
+    campo.evaluate_handle.return_value.dispose.assert_called_once()
+
+
+def test_login_exigido_durante_abertura_do_picker_impede_repeticao(pagina, camada_local):
+    iframe = pagina.locator.return_value.and_.return_value
+
+    def abrir_seletor(**kwargs):
+        pagina.frames = [SimpleNamespace(url="https://accounts.google.com/v3/signin/identifier")]
+        raise TimeoutError("Seletor não ficou disponível")
+
+    iframe.wait_for.side_effect = abrir_seletor
+    with pytest.raises(ErroAutenticacao, match="Execute login"):
+        mymaps._enviar_csv(pagina, camada_local)
+
+
 def test_upload_pode_fechar_picker_automaticamente():
     iframe, selecionar = Mock(), Mock()
     iframe.is_visible.return_value = True
@@ -220,7 +276,7 @@ def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local,
         raise TimeoutError("DETALHE_FICTICIO")
 
     monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
-    with pytest.raises(mymaps.ErroMapa, match="continuou aberto após o envio") as erro:
+    with pytest.raises(mymaps.ErroMapa, match="Tempo esgotado ao confirmar o fim do envio") as erro:
         mymaps._enviar_csv(pagina, camada_local)
     assert type(erro.value) is mymaps.ErroMapa
     assert "HTTP do upload: 400, 403. Falhas de rede observadas: 1 (ERR_CONNECTION_RESET)." in str(erro.value)
@@ -404,6 +460,17 @@ def test_falha_no_picker_impede_confirmacao(pagina, importacao):
     with pytest.raises(mymaps.ErroMapa, match="enviar o CSV") as erro:
         mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
     assert "DETALHE_FICTICIO" not in str(erro.value)
+    dialogo.get_by_role.return_value.click.assert_not_called()
+
+
+def test_aviso_de_falha_no_picker_impede_retentativa(pagina, importacao):
+    estado, remota, dialogo, locators = importacao
+    locators["falha"].count.return_value = 1
+    estado.enviar.side_effect = mymaps.ErroUploadTemporario("Tempo esgotado ao preparar o campo.")
+    with pytest.raises(mymaps.ErroMapa, match="indicou falha") as erro:
+        mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    assert type(erro.value) is mymaps.ErroMapa
+    assert "Tempo esgotado ao preparar o campo." in str(erro.value)
     dialogo.get_by_role.return_value.click.assert_not_called()
 
 
