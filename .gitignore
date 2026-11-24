@@ -17,6 +17,7 @@
 
 # Sessões, perfis e possíveis segredos de autenticação
 /runtime/
+/src/runtime/
 /logs/
 /auth/
 /.auth/
