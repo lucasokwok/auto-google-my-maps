@@ -92,7 +92,7 @@ def test_dados_invalidos_bloqueiam_mapa_sem_impedir_validos(execucao, tmp_path):
 
 def test_nenhum_csv_valido_nao_inicia_navegador(execucao, tmp_path):
     (tmp_path / "MAPAS" / "B" / CAMADAS[0]).unlink()
-    assert main(["atualizar", "--mapa", "B"]) == 1
+    assert main(["atualizar", "--mapa", "B", "--pausar-em-erro"]) == 1
     execucao.abrir_navegador.assert_not_called()
 
 
@@ -164,6 +164,52 @@ def test_upload_temporario_tem_uma_nova_tentativa_e_processa_a_proxima_camada(
     assert "A — pontos_01.csv — HTTP do upload: 503. Nova tentativa de upload em 2 s." in log
     assert "A — pontos_02.csv — atualização confirmada" in log
     assert ("ERROR" in log) is not recuperou
+
+
+@pytest.mark.parametrize(("erro", "codigo", "proximo_passo"), [
+    (ErroMapa("Falha na camada"), 1, "continuar"),
+    (ErroUploadTemporario("Seletor ficou aberto"), 0, "tentar novamente"),
+])
+def test_opcao_pausa_com_a_pagina_da_falha_aberta(execucao, tmp_path, monkeypatch, erro, codigo, proximo_passo):
+    pagina, seguinte = Mock(), Mock()
+    pagina.is_closed.return_value = False
+    execucao.contexto.new_page.side_effect = [pagina, seguinte]
+    execucao.reimportar.side_effect = [erro, None, None]
+    pausa_upload = Mock()
+    monkeypatch.setattr(atualizacao, "sleep", pausa_upload)
+
+    def inspecionar(_):
+        pagina.close.assert_not_called()
+        pagina.bring_to_front.assert_called_once()
+        execucao.reimportar.assert_called_once()
+        pausa_upload.assert_not_called()
+        log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+        assert f"A — pontos_01.csv — {erro}" in log
+
+    entrada = Mock(side_effect=inspecionar)
+    monkeypatch.setattr("builtins.input", entrada)
+    assert main(["atualizar", "--mapa", "A", "--pausar-em-erro"]) == codigo
+    entrada.assert_called_once()
+    mensagem = entrada.call_args.args[0]
+    assert "A — pontos_01.csv — Inspecione o navegador." in mensagem
+    assert f"Pressione Enter no terminal para {proximo_passo}" in mensagem
+    assert execucao.reimportar.call_count == (2 if codigo else 3)
+    pagina.close.assert_called_once()
+    seguinte.close.assert_called_once()
+
+
+@pytest.mark.parametrize(("interrupcao", "codigo"), [(EOFError, 1), (KeyboardInterrupt, 130)])
+def test_pausa_libera_a_pagina_quando_a_entrada_termina(execucao, tmp_path, monkeypatch, interrupcao, codigo):
+    pagina = execucao.contexto.new_page.return_value
+    pagina.is_closed.return_value = False
+    execucao.reimportar.side_effect = ErroMapa("Falha na camada")
+    monkeypatch.setattr("builtins.input", Mock(side_effect=interrupcao))
+
+    assert main(["atualizar", "--mapa", "B", "--pausar-em-erro"]) == codigo
+    pagina.close.assert_called_once()
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    mensagem = "Terminal sem entrada disponível" if codigo == 1 else "Atualização interrompida pelo usuário"
+    assert mensagem in log
 
 
 def test_sessao_expirada_interrompe_lote(execucao, tmp_path):
