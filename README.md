@@ -162,24 +162,43 @@ Procure **atualização confirmada pela interface** no terminal ou em `logs/atua
 
 ### Agende a atualização no Windows
 
-Com a sessão do Edge já salva, crie uma cópia local do arquivo de exemplo na raiz do repositório:
+#### Configure a cópia local do `.bat`
+
+Com a sessão do Edge já salva, abra o **Prompt de Comando** na raiz do repositório e crie uma cópia do modelo. Edite sempre a cópia `atualizar-mymaps.bat`, que o Git ignora. [Arquivo de exemplo](atualizar-mymaps.example.bat)
 
 ```bat
 copy atualizar-mymaps.example.bat atualizar-mymaps.bat
+notepad atualizar-mymaps.bat
 ```
 
-A cópia usa o Python de `.venv`, o perfil dedicado em `%LOCALAPPDATA%` e atualiza todos os mapas cadastrados. Se você salvou a sessão em outro local, ajuste `PERFIL_MYMAPS` na cópia. O Git ignora os arquivos `.bat` locais e mantém apenas o exemplo versionado. [Arquivo de exemplo](atualizar-mymaps.example.bat)
+- **`PROJETO`** — mantenha `set "PROJETO=%~dp0"` se a cópia estiver na raiz do projeto. Se mover o arquivo para outra pasta, informe o caminho absoluto da pasta que contém `pyproject.toml`, por exemplo `set "PROJETO=C:\Projetos\auto-google-my-maps"`.
+- **`PERFIL_MYMAPS`** — use o mesmo diretório que você passou a `login --navegador edge --perfil-dir`. O modelo usa `%LOCALAPPDATA%\auto-google-my-maps\edge-profile`. Se salvou a sessão em outro diretório, substitua o valor completo, por exemplo `set "PERFIL_MYMAPS=D:\Perfis\edge-mymaps"`. Mantenha as aspas.
+- **Mapas** — o comando usa o Python de `.venv` e atualiza todos os mapas cadastrados. Para testar com um único mapa, acrescente `--mapa "MAPA_TESTE_RIO_DE_JANEIRO"` ao fim da linha que começa com `".venv\Scripts\python.exe"`. Use o `NomeMapa` exato e retire a opção quando quiser rodar o lote.
 
-No **Agendador de Tarefas**, escolha **Criar Tarefa** e configure os campos a seguir.
+Salve a cópia, feche as janelas que usarem o perfil dedicado e execute `atualizar-mymaps.bat` no Prompt de Comando para testar os caminhos e a sessão. Reserve `--pausar-em-erro` para execuções manuais que tenham alguém no terminal para pressionar **Enter**.
+
+#### Cadastre a tarefa
+
+Abra o **Agendador de Tarefas** no menu Iniciar, escolha **Criar Tarefa** e preencha as abas.
 
 | Aba | Configuração |
 | --- | --- |
-| **Geral** | Use a mesma conta do Windows que fez login no Edge e selecione **Executar somente quando o usuário estiver conectado**. |
-| **Disparadores** | Defina a frequência e escolha um horário em que os CSVs já estejam disponíveis. |
-| **Ações** | Escolha **Iniciar um programa**. Use `C:\Windows\System32\cmd.exe` em **Programa/script** e `/d /c ""C:\caminho\auto-google-my-maps\atualizar-mymaps.bat""` em **Adicionar argumentos**. Substitua o caminho pelo da sua cópia. |
-| **Configurações** | Para uma tarefa que já está em execução, escolha **Não iniciar uma nova instância**. |
+| **Geral** | Dê um nome à tarefa, como **Atualizar Google My Maps**. Use a mesma conta do Windows que fez login no Edge e selecione **Executar somente quando o usuário estiver conectado**. |
+| **Disparadores** | Clique em **Novo**. Selecione **Em um agendamento** e defina a frequência e o horário para depois de os CSVs estarem disponíveis. |
+| **Ações** | Clique em **Novo**, escolha **Iniciar um programa** e preencha os campos abaixo. |
+| **Configurações** | Em **Se a tarefa já estiver em execução**, escolha **Não iniciar uma nova instância**. |
 
-Feche as janelas que usarem o perfil dedicado e selecione **Executar** no Agendador para testar. Confira `logs/atualizacao.log` e o **Resultado da última execução**. O código `0x0` indica sucesso.
+| Campo da ação | Valor |
+| --- | --- |
+| **Programa/script** | `C:\Windows\System32\cmd.exe` |
+| **Adicionar argumentos** | `/d /c ""C:\Projetos\auto-google-my-maps\atualizar-mymaps.bat""` |
+| **Iniciar em** | `C:\Projetos\auto-google-my-maps` |
+
+Substitua o caminho de exemplo em **Adicionar argumentos** pelo caminho completo da cópia e preserve as aspas duplas. Em **Iniciar em**, informe o caminho da pasta do projeto, sem aspas. Clique em **OK** para salvar.
+
+#### Confirme a primeira execução
+
+Feche as janelas que usarem o perfil dedicado. Na **Biblioteca do Agendador de Tarefas**, encontre a tarefa, clique nela com o botão direito e escolha **Executar**. Quando terminar, confira **Resultado da última execução** e `logs/atualizacao.log` na raiz do projeto. `0x0` indica sucesso. Se o log indicar sessão expirada, renove o login manualmente no mesmo perfil.
 
 ## 6. Entenda as alternativas de upload e os erros
 
