@@ -121,6 +121,7 @@ def test_procurar_abre_o_seletor_e_envia_o_arquivo_validado(pagina, camada_local
     pagina.expect_file_chooser.assert_called_once()
     picker.get_by_role.assert_any_call("button", name=mymaps._PROCURAR)
     escolha.value.set_files.assert_called_once_with(camada_local.arquivo)
+    pagina.wait_for_timeout.assert_not_called()
 
 
 def test_preferencia_pelo_campo_csv_especifico_sem_abrir_procurar(pagina, camada_local):
@@ -128,6 +129,11 @@ def test_preferencia_pelo_campo_csv_especifico_sem_abrir_procurar(pagina, camada
     iframe.is_visible.return_value = False
     picker = iframe.content_frame
     campo = picker.locator.return_value
+    ordem = Mock()
+    ordem.attach_mock(campo.wait_for, "localizar")
+    ordem.attach_mock(pagina.wait_for_timeout, "aguardar")
+    ordem.attach_mock(campo.evaluate_handle, "observar")
+    ordem.attach_mock(campo.set_input_files, "entregar")
 
     mymaps._enviar_csv(pagina, camada_local)
 
@@ -137,6 +143,8 @@ def test_preferencia_pelo_campo_csv_especifico_sem_abrir_procurar(pagina, camada
     campo.set_input_files.assert_called_once_with(camada_local.arquivo)
     campo.evaluate_handle.return_value.dispose.assert_called_once()
     pagina.expect_file_chooser.assert_not_called()
+    assert [chamada[0] for chamada in ordem.method_calls] == ["localizar", "aguardar", "observar", "entregar"]
+    pagina.wait_for_timeout.assert_called_once_with(2_000)
 
 
 def test_arrastar_entrega_o_arquivo_validado_na_area_do_picker(pagina, camada_local):
@@ -150,6 +158,7 @@ def test_arrastar_entrega_o_arquivo_validado_na_area_do_picker(pagina, camada_lo
 
     iframe.content_frame.get_by_text.assert_called_once_with(mymaps._ARRASTAR_ARQUIVO)
     pagina.expect_file_chooser.assert_not_called()
+    pagina.wait_for_timeout.assert_not_called()
     dados = {"items": [], "files": [str(camada_local.arquivo)], "dragOperationsMask": 1}
     assert sessao.send.call_args_list == [
         call("Input.dispatchDragEvent", {"type": etapa, "x": 120, "y": 60, "data": dados})
@@ -174,6 +183,15 @@ def test_csv_alterado_durante_upload_impede_reimportacao(pagina, camada_local, m
 
     with pytest.raises(mymaps.ErroMapa, match="mudou desde a validação"):
         mymaps._enviar_csv(pagina, camada_local)
+
+
+def test_csv_alterado_durante_a_pausa_do_picker_nao_e_enviado(pagina, camada_local):
+    campo = pagina.locator.return_value.and_.return_value.content_frame.locator.return_value
+    pagina.wait_for_timeout.side_effect = lambda _: camada_local.arquivo.write_bytes(b"conteudo diferente")
+
+    with pytest.raises(mymaps.ErroMapa, match="mudou desde a validação"):
+        mymaps._enviar_csv(pagina, camada_local)
+    campo.set_input_files.assert_not_called()
 
 
 @pytest.mark.parametrize(("operacao", "etapa"), [

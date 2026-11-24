@@ -53,6 +53,7 @@ _IFRAME_PICKER = (
     'iframe.picker-frame, iframe[src^="https://docs.google.com/picker"], '
     'iframe[src^="https://drive.google.com/picker"], iframe[src^="https://www.google.com/picker"]'
 )
+_PAUSA_INICIALIZACAO_CAMPO_CSV_MS = 2_000
 _PRAZO_UPLOAD_SEGUNDOS = 60
 _HTTP_UPLOAD_TRANSITORIOS = {408, 500, 502, 503, 504}
 _REDE_UPLOAD_TRANSITORIOS = {
@@ -296,6 +297,8 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
                 escolha.value.set_files(camada.arquivo)
             else:
                 etapa = "preparar o campo de arquivo do Picker"
+                # O campo pode aparecer antes de o Picker estar pronto para receber o arquivo.
+                pagina.wait_for_timeout(_PAUSA_INICIALIZACAO_CAMPO_CSV_MS)
                 estado_campo = _observar_campo_csv(campo, camada)
                 etapa = "entregar o CSV ao campo de arquivo do Picker"
                 _conferir_csv_local(camada)
