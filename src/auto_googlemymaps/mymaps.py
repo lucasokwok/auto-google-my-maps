@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Error, FrameLocator, Locator, Page, Request, Response, TimeoutError
+from playwright.sync_api import Error, Frame, FrameLocator, JSHandle, Locator, Page, Request, Response, TimeoutError
 
 from .configuracao import ErroConfiguracao, Mapa, identificador_mapa
 from .csvs import Camada
@@ -26,6 +27,7 @@ _CORRESPONDENTES = re.compile(
 )
 _ENVIAR = re.compile(r"^(?:Upload|Fazer upload|Enviar)$", re.IGNORECASE)
 _PROCURAR = re.compile(r"^(?:Browse|Procurar)$", re.IGNORECASE)
+_CAMPO_CSV_PICKER = 'input[type="file"][jsname="G1bupd"][accept*=".csv" i]'
 _ARRASTAR_ARQUIVO = re.compile(r"^(?:ou arraste um arquivo até aqui|or drag (?:a file|files) here)$", re.IGNORECASE)
 _SELECIONAR = re.compile(r"^(?:Select|Selecionar)$", re.IGNORECASE)
 _DADOS_CAMADA = re.compile(r"^(?:Layer data|Dados da camada)\s*:?$", re.IGNORECASE)
@@ -128,15 +130,49 @@ def _conferir_csv_local(camada: Camada) -> None:
         raise ErroMapa("O CSV validado não está acessível para o navegador.") from None
 
 
-def _requisicao_de_upload(requisicao: Request) -> bool:
+def _requisicao_de_upload(requisicao: Request, quadro: Frame | None) -> bool:
     destino = urlsplit(requisicao.url)
     dominio = destino.hostname or ""
-    return (
-        requisicao.method in {"POST", "PUT", "PATCH"}
-        and destino.scheme == "https"
-        and (dominio == "google.com" or dominio.endswith((".google.com", ".googleapis.com", ".googleusercontent.com")))
-        and "upload" in destino.path.lower()
+    origem_google = dominio == "google.com" or dominio.endswith(
+        (".google.com", ".googleapis.com", ".googleusercontent.com"),
     )
+    if not origem_google or destino.scheme != "https" or requisicao.method not in {"POST", "PUT", "PATCH", "OPTIONS"}:
+        return False
+    if "upload" in destino.path.lower():
+        return True
+    if quadro is not None:
+        with suppress(Error):
+            return requisicao.frame == quadro
+    return False
+
+
+def _observar_campo_csv(campo: Locator, camada: Camada) -> JSHandle:
+    return campo.evaluate_handle(
+        """(entrada, esperado) => {
+            const estado = {mudou: false, corresponde: false};
+            entrada.addEventListener("change", () => {
+                const arquivo = entrada.files?.[0];
+                estado.mudou = true;
+                estado.corresponde = entrada.files?.length === 1 &&
+                    arquivo.name === esperado.nome && arquivo.size === esperado.bytes;
+            }, {capture: true, once: true});
+            return estado;
+        }""",
+        {"nome": camada.nome, "bytes": len(camada.conteudo)},
+    )
+
+
+def _diagnosticar_campo_csv(estado: JSHandle | None) -> str:
+    if estado is None:
+        return ""
+    with suppress(Error):
+        observado = estado.json_value()
+        if observado["corresponde"]:
+            return " O campo recebeu um arquivo com o nome e tamanho esperados."
+        if observado["mudou"]:
+            return " O campo mudou, mas o arquivo não corresponde ao nome e tamanho esperados."
+        return " O campo não emitiu o evento de seleção do arquivo."
+    return " O estado do campo de arquivo ficou indisponível."
 
 
 def _soltar_arquivo(pagina: Page, zona: Locator, arquivo: Path) -> None:
@@ -162,18 +198,24 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
         picker.get_by_role("button", name=_ENVIAR)
     )
     upload.click()
+    quadro = iframe.element_handle().content_frame()
 
     status_http: set[int] = set()
     falhas_de_rede = 0
+    codigos_de_rede: set[str] = set()
+    estado_campo = None
 
     def registrar_resposta(resposta: Response) -> None:
-        if _requisicao_de_upload(resposta.request):
+        if _requisicao_de_upload(resposta.request, quadro):
             status_http.add(resposta.status)
 
     def registrar_falha(requisicao: Request) -> None:
         nonlocal falhas_de_rede
-        if _requisicao_de_upload(requisicao):
+        if _requisicao_de_upload(requisicao, quadro):
             falhas_de_rede += 1
+            falha = requisicao.failure or ""
+            if re.fullmatch(r"(?:net::)?ERR_[A-Z0-9_]+", falha):
+                codigos_de_rede.add(falha.removeprefix("net::"))
 
     pagina.on("response", registrar_resposta)
     pagina.on("requestfailed", registrar_falha)
@@ -182,22 +224,34 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
         if arrastar_csv:
             _soltar_arquivo(pagina, picker.get_by_text(_ARRASTAR_ARQUIVO), camada.arquivo)
         else:
-            with pagina.expect_file_chooser() as escolha:
-                picker.get_by_role("button", name=_PROCURAR).click()
-            escolha.value.set_files(camada.arquivo)
+            campo = picker.locator(_CAMPO_CSV_PICKER)
+            try:
+                campo.wait_for(state="attached", timeout=2_000)
+            except TimeoutError:
+                with pagina.expect_file_chooser() as escolha:
+                    picker.get_by_role("button", name=_PROCURAR).click()
+                escolha.value.set_files(camada.arquivo)
+            else:
+                estado_campo = _observar_campo_csv(campo, camada)
+                campo.set_input_files(camada.arquivo)
 
         try:
             _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
         except TimeoutError:
             exigir_sessao(pagina)
             codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
+            erros_de_rede = f" ({', '.join(sorted(codigos_de_rede))})" if codigos_de_rede else ""
             raise ErroMapa(
                 "O seletor de arquivos continuou aberto após o envio do CSV. "
-                f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}."
+                f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}{erros_de_rede}."
+                f"{_diagnosticar_campo_csv(estado_campo)}"
             ) from None
 
         _conferir_csv_local(camada)
     finally:
+        if estado_campo is not None:
+            with suppress(Error):
+                estado_campo.dispose()
         pagina.remove_listener("requestfailed", registrar_falha)
         pagina.remove_listener("response", registrar_resposta)
 
