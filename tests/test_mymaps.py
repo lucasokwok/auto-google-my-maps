@@ -213,7 +213,7 @@ def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local,
     outra_requisicao = SimpleNamespace(method="POST", url="https://docs.google.com/outra", frame=None)
 
     def aguardar_upload(iframe, selecionar):
-        eventos["response"](SimpleNamespace(request=upload, status=403))
+        eventos["response"](SimpleNamespace(request=upload, status=403, headers={}))
         eventos["response"](SimpleNamespace(request=rpc_picker, status=400))
         eventos["response"](SimpleNamespace(request=outra_requisicao, status=500))
         eventos["requestfailed"](upload)
@@ -222,12 +222,52 @@ def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local,
     monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
     with pytest.raises(mymaps.ErroMapa, match="continuou aberto após o envio") as erro:
         mymaps._enviar_csv(pagina, camada_local)
+    assert type(erro.value) is mymaps.ErroMapa
     assert "HTTP do upload: 400, 403. Falhas de rede observadas: 1 (ERR_CONNECTION_RESET)." in str(erro.value)
     assert "O campo recebeu um arquivo com o nome e tamanho esperados." in str(erro.value)
     assert "500" not in str(erro.value)
     assert "DETALHE_FICTICIO" not in str(erro.value)
     for evento, callback in eventos.items():
         pagina.remove_listener.assert_any_call(evento, callback)
+
+
+@pytest.mark.parametrize(("status", "rede", "cabecalhos", "tipo"), [
+    ([503], None, {}, mymaps.ErroUploadTemporario),
+    ([], "net::ERR_CONNECTION_RESET", {}, mymaps.ErroUploadTemporario),
+    ([503], None, {"retry-after": "120"}, mymaps.ErroMapa),
+    ([429], None, {}, mymaps.ErroMapa),
+    ([200, 503], None, {}, mymaps.ErroMapa),
+    ([308, 503], None, {}, mymaps.ErroMapa),
+    ([], "net::ERR_ABORTED", {}, mymaps.ErroMapa),
+    ([], None, {}, mymaps.ErroMapa),
+])
+def test_retentativa_exige_sinal_transitorio_sem_aceite_do_envio(
+    pagina, camada_local, monkeypatch, status, rede, cabecalhos, tipo,
+):
+    eventos = {}
+    pagina.on.side_effect = eventos.__setitem__
+    iframe = pagina.locator.return_value.and_.return_value
+    estado = iframe.content_frame.locator.return_value.evaluate_handle.return_value
+    estado.json_value.return_value = {"mudou": True, "corresponde": True}
+    upload = SimpleNamespace(method="POST", url="https://docs.google.com/upload", failure=rede)
+    preflight = SimpleNamespace(method="OPTIONS", url=upload.url)
+    picker_rpc = SimpleNamespace(
+        method="POST", url="https://docs.google.com/rpc", frame=iframe.element_handle().content_frame(),
+    )
+
+    def aguardar_upload(iframe, selecionar):
+        eventos["response"](SimpleNamespace(request=preflight, status=204, headers={}))
+        eventos["response"](SimpleNamespace(request=picker_rpc, status=503, headers={}))
+        for codigo in status:
+            eventos["response"](SimpleNamespace(request=upload, status=codigo, headers=cabecalhos))
+        if rede:
+            eventos["requestfailed"](upload)
+        raise TimeoutError("O seletor permaneceu aberto")
+
+    monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
+    with pytest.raises(mymaps.ErroMapa) as erro:
+        mymaps._enviar_csv(pagina, camada_local)
+    assert type(erro.value) is tipo
 
 
 @pytest.mark.parametrize("ocorrencias", [0, 2])

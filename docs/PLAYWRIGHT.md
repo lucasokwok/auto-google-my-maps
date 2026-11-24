@@ -29,6 +29,8 @@ Pela semântica documentada pelo Google, a operação inclui os itens novos, atu
 
 Se o seletor continuar aberto, o log registra se o campo emitiu `change` com o nome e o tamanho esperados. Também registra códigos HTTP de envio e de requisições de escrita ou preflight iniciadas pelo Picker, além dos códigos de falha de rede reconhecidos. Esses sinais diagnosticam o envio. A reimportação só é confirmada na interface do mapa. URLs, cabeçalhos e corpos de requisição ficam fora do log.
 
+Se o envio falhar com um erro temporário reconhecido, como HTTP `503` ou uma conexão interrompida, o programa registra o motivo, aguarda dois segundos e tenta a mesma camada uma vez em uma nova página. A retentativa exige que o upload esteja sem sinal de aceite. Recusas de acesso, limite de requisições, pedidos de espera do servidor e falhas sem causa identificada ficam no log para conferência. O resultado indeterminado após **Concluir** também fica para conferência porque o mapa pode já ter sido atualizado.
+
 ## Validação efetiva e limites
 
 Os testes automatizados com mocks cobrem a navegação para o editor, a seleção de camadas, as etapas do Picker, a correspondência e os caminhos de erro. Um ensaio em Chromium com páginas simuladas exercitou a interação em português e inglês, incluindo o envio de um CSV com BOM.

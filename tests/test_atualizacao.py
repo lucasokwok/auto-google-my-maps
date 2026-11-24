@@ -8,7 +8,7 @@ import pytest
 from auto_googlemymaps import atualizacao
 from auto_googlemymaps.__main__ import main
 from auto_googlemymaps.csvs import CAMADAS
-from auto_googlemymaps.mymaps import ErroMapa
+from auto_googlemymaps.mymaps import ErroMapa, ErroUploadTemporario
 from auto_googlemymaps.navegador import ErroAutenticacao
 
 CSV = b"CHAVE,Latitude,Longitude,Nome\nID_FICTICIO,0,0,DADO_FICTICIO\n"
@@ -138,6 +138,32 @@ def test_falha_ao_reabrir_editor_e_registrada_e_restante_continua(execucao, tmp_
     log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
     assert "C — pontos_02.csv — Editor indisponível" in log
     assert "C — atualização encerrada com falhas (3/5 camada(s) confirmada(s))" in log
+
+
+@pytest.mark.parametrize("recuperou", [True, False])
+def test_upload_temporario_tem_uma_nova_tentativa_e_processa_a_proxima_camada(
+    execucao, tmp_path, monkeypatch, recuperou,
+):
+    paginas = [Mock() for _ in range(2 if recuperou else 3)]
+    execucao.contexto.new_page.side_effect = paginas
+    erro = ErroUploadTemporario("HTTP do upload: 503.")
+    execucao.reimportar.side_effect = [erro, None if recuperou else erro, None]
+    pausa = Mock()
+    monkeypatch.setattr(atualizacao, "sleep", pausa)
+
+    assert main(["atualizar", "--mapa", "A"]) == (0 if recuperou else 1)
+    pausa.assert_called_once_with(2)
+    tentativas = [chamada.args for chamada in execucao.reimportar.call_args_list]
+    assert [(args[0], args[3].nome) for args in tentativas] == [
+        (paginas[0], CAMADAS[0]), (paginas[1], CAMADAS[0]), (paginas[-1], CAMADAS[1]),
+    ]
+    execucao.localizar.assert_any_call(paginas[1], CAMADAS[0])
+    for pagina in paginas:
+        pagina.close.assert_called_once()
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    assert "A — pontos_01.csv — HTTP do upload: 503. Nova tentativa de upload em 2 s." in log
+    assert "A — pontos_02.csv — atualização confirmada" in log
+    assert ("ERROR" in log) is not recuperou
 
 
 def test_sessao_expirada_interrompe_lote(execucao, tmp_path):
