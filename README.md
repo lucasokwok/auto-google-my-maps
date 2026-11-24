@@ -160,6 +160,27 @@ python -m auto_googlemymaps atualizar --navegador edge --perfil-dir "%PERFIL_MYM
 
 Procure **atualização confirmada pela interface** no terminal ou em `logs/atualizacao.log`. Reabra o mapa e confira o ponto alterado, o incluído e o removido pelos IDs. Para atualizar **todos os mapas cadastrados**, execute o mesmo comando retirando `--mapa` e o nome.
 
+### Agende a atualização no Windows
+
+Com a sessão do Edge já salva, crie uma cópia local do arquivo de exemplo na raiz do repositório:
+
+```bat
+copy atualizar-mymaps.example.bat atualizar-mymaps.bat
+```
+
+A cópia usa o Python de `.venv`, o perfil dedicado em `%LOCALAPPDATA%` e atualiza todos os mapas cadastrados. Se você salvou a sessão em outro local, ajuste `PERFIL_MYMAPS` na cópia. O Git ignora os arquivos `.bat` locais e mantém apenas o exemplo versionado. [Arquivo de exemplo](atualizar-mymaps.example.bat)
+
+No **Agendador de Tarefas**, escolha **Criar Tarefa** e configure os campos a seguir.
+
+| Aba | Configuração |
+| --- | --- |
+| **Geral** | Use a mesma conta do Windows que fez login no Edge e selecione **Executar somente quando o usuário estiver conectado**. |
+| **Disparadores** | Defina a frequência e escolha um horário em que os CSVs já estejam disponíveis. |
+| **Ações** | Escolha **Iniciar um programa**. Use `C:\Windows\System32\cmd.exe` em **Programa/script** e `/d /c ""C:\caminho\auto-google-my-maps\atualizar-mymaps.bat""` em **Adicionar argumentos**. Substitua o caminho pelo da sua cópia. |
+| **Configurações** | Para uma tarefa que já está em execução, escolha **Não iniciar uma nova instância**. |
+
+Feche as janelas que usarem o perfil dedicado e selecione **Executar** no Agendador para testar. Confira `logs/atualizacao.log` e o **Resultado da última execução**. O código `0x0` indica sucesso.
+
 ## 6. Entenda as alternativas de upload e os erros
 
 No envio padrão, o Playwright espera 2 segundos após localizar o campo de arquivo e entrega o CSV original. Se o campo esperado estiver ausente, tenta o botão **Procurar**. Se precisar testar outra forma de envio, acrescente `--arrastar-csv` ao comando para usar a área de arrastar e soltar do seletor.
