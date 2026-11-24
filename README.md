@@ -60,7 +60,7 @@ python -m auto_googlemymaps atualizar
 
 - `validar` verifica o cadastro e os dados locais. `planejar` também mostra as camadas e as contagens de registros. Ambos funcionam sem abrir o navegador.
 - `login` abre o navegador selecionado. Entre manualmente na conta Google com permissão de edição, conclua eventuais verificações e pressione Enter no terminal. O perfil padrão é `runtime/google_profile/` no Chromium e `runtime/google_profile_edge/` no Edge. Se a sessão expirar, execute `login` novamente com o mesmo navegador e perfil.
-- `atualizar` valida os CSVs e checa cada camada esperada antes da primeira reimportação do mapa. Use `--mapa` com o `NomeMapa` exato para processar apenas aquele mapa. O programa faz uma nova tentativa quando detecta falha temporária de upload antes de **Concluir**. Se a camada ainda falhar, registra o mapa e a camada, segue para as demais e informa o total confirmado. Uma falha de autenticação encerra o lote.
+- `atualizar` valida os CSVs e checa cada camada esperada antes da primeira reimportação do mapa. Use `--mapa` com o `NomeMapa` exato para processar apenas aquele mapa. O programa pode tentar o upload mais uma vez se detectar uma falha temporária ou se o seletor continuar aberto após o prazo. Se a camada ainda falhar, registra o mapa e a camada, segue para as demais e informa o total confirmado. Uma falha de autenticação encerra o lote.
 
 As opções `--config` e `--mapas-dir` substituem os caminhos locais padrão. Use o mesmo `--navegador` e, se definir um caminho alternativo, o mesmo `--perfil-dir` em `login` e `atualizar`. Em ambientes temporários, faça login novamente se o perfil local tiver sido perdido.
 
