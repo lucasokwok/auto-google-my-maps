@@ -31,6 +31,8 @@ Se o navegador falhar durante a seleção ou o envio, o log identifica a etapa, 
 
 O programa aguarda dois segundos e tenta a mesma camada uma vez em uma nova página se o prazo se esgotar antes da entrega, se houver uma falha temporária reconhecida no upload ou se o seletor permanecer aberto após 60 segundos. A última condição se aplica mesmo com respostas HTTP `200` ou `204`, pois elas confirmam requisições do navegador e o fluxo ainda está antes de **Concluir**. Recusas de acesso, limites de requisições e pedidos de espera do servidor impedem a retentativa quando reconhecidos. O resultado indeterminado após **Concluir** fica para conferência porque o mapa pode já ter sido atualizado.
 
+`atualizar --pausar-em-erro` mantém a página da falha aberta até que você pressione **Enter** no terminal. A pausa ocorre antes de reabrir o mapa para uma retentativa, passar à próxima camada ou encerrar. O navegador continua ativo durante a inspeção, então avisos temporários podem desaparecer. Use **Ctrl+C** para encerrar sem seguir para a próxima operação.
+
 ## Validação efetiva e limites
 
 Os testes automatizados com mocks cobrem a navegação para o editor, a seleção de camadas, as etapas do Picker, a correspondência e os caminhos de erro. Um ensaio em Chromium com páginas simuladas exercitou a interação em português e inglês, incluindo o envio de um CSV com BOM.

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from logging import Logger
 from pathlib import Path
 from time import sleep
 
-from playwright.sync_api import BrowserContext
+from playwright.sync_api import BrowserContext, Error
 
 from .configuracao import Configuracao, Mapa
 from .csvs import ResultadoMapa, validar_mapa
@@ -19,17 +19,32 @@ _PAUSA_UPLOAD_SEGUNDOS = 2
 
 def _atualizar_mapa(
     contexto: BrowserContext, mapa: Mapa, resultado: ResultadoMapa, coluna: str, log: Logger, *, arrastar_csv: bool,
+    pausar_em_erro: bool = False,
 ) -> bool:
     pagina = contexto.new_page()
     operacao = "acesso ao editor"
     concluidas = 0
     total = len(resultado.camadas)
 
-    def registrar_falha(erro: ErroMapa | ErroAutenticacao) -> None:
+    def aguardar_inspecao(proximo_passo: str) -> None:
+        if not pausar_em_erro or pagina.is_closed():
+            return
+        with suppress(Error):
+            pagina.bring_to_front()
+        try:
+            input(
+                f"{mapa.nome} — {operacao} — Inspecione o navegador. "
+                f"Pressione Enter no terminal para {proximo_passo} ou Ctrl+C para interromper. "
+            )
+        except EOFError:
+            log.warning("%s — %s — Terminal sem entrada disponível para a pausa.", mapa.nome, operacao)
+
+    def registrar_falha(erro: ErroMapa | ErroAutenticacao, *, proximo_passo: str = "continuar") -> None:
         log.error(
             "%s — %s — %s (%d/%d camada(s) confirmada(s))",
             mapa.nome, operacao, erro, concluidas, total,
         )
+        aguardar_inspecao(proximo_passo)
 
     log.info("%s — iniciando atualização de %d camada(s)", mapa.nome, total)
     try:
@@ -64,9 +79,11 @@ def _atualizar_mapa(
                     reabrir_editor = True
                     if tentativa == 1 and isinstance(erro, ErroUploadTemporario):
                         log.warning(
-                            "%s — %s — %s Nova tentativa de upload em %d s.",
+                            "%s — %s — %s Nova tentativa de upload em %d s%s.",
                             mapa.nome, operacao, erro, _PAUSA_UPLOAD_SEGUNDOS,
+                            " após a pausa de inspeção" if pausar_em_erro else "",
                         )
+                        aguardar_inspecao("tentar novamente")
                         sleep(_PAUSA_UPLOAD_SEGUNDOS)
                         continue
                     registrar_falha(erro)
@@ -74,10 +91,11 @@ def _atualizar_mapa(
                     concluidas += 1
                     log.info("%s — %s — atualização confirmada pela interface", mapa.nome, operacao)
                 break
-    except (ErroMapa, ErroAutenticacao) as erro:
+    except ErroAutenticacao as erro:
+        registrar_falha(erro, proximo_passo="encerrar a atualização")
+        raise
+    except ErroMapa as erro:
         registrar_falha(erro)
-        if isinstance(erro, ErroAutenticacao):
-            raise
         return False
     finally:
         pagina.close()
@@ -91,7 +109,7 @@ def _atualizar_mapa(
 
 def atualizar_mapas(
     config: Configuracao, raiz: Path, perfil: Path, log: Logger, *, navegador: str = NAVEGADOR_PADRAO,
-    arrastar_csv: bool = False,
+    arrastar_csv: bool = False, pausar_em_erro: bool = False,
 ) -> bool:
     """Retorna se todos os mapas passaram pela validação e atualização."""
     sucesso = True
@@ -109,6 +127,7 @@ def atualizar_mapas(
                 contexto = recursos.enter_context(abrir_navegador(perfil, navegador=navegador))
             if not _atualizar_mapa(
                 contexto, mapa, resultado, config.coluna_identificacao, log, arrastar_csv=arrastar_csv,
+                pausar_em_erro=pausar_em_erro,
             ):
                 sucesso = False
     return sucesso
