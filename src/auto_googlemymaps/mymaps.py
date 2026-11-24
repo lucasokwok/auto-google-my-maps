@@ -66,7 +66,7 @@ class ErroMapa(RuntimeError):
 
 
 class ErroUploadTemporario(ErroMapa):
-    """Falha transitória observada no envio do arquivo, antes de concluir a reimportação."""
+    """Falha na seleção ou no envio do CSV que admite uma nova tentativa."""
 
 
 @dataclass(frozen=True)
@@ -205,14 +205,14 @@ def _soltar_arquivo(pagina: Page, zona: Locator, arquivo: Path) -> None:
 
 
 def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> None:
+    _conferir_csv_local(camada)
     iframe = pagina.locator(_IFRAME_PICKER).and_(pagina.locator(":visible"))
     picker: FrameLocator = iframe.content_frame
     upload = picker.get_by_role("option", name=_ENVIAR).or_(picker.get_by_role("tab", name=_ENVIAR)).or_(
         picker.get_by_role("button", name=_ENVIAR)
     )
-    upload.click()
-    quadro = iframe.element_handle().content_frame()
 
+    quadro = None
     status_http: set[int] = set()
     status_envio: set[int] = set()
     falhas_de_rede = 0
@@ -220,6 +220,8 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
     falhas_envio: set[str] = set()
     servidor_pediu_espera = False
     estado_campo = None
+    envio_iniciado = False
+    etapa = "aguardar a abertura do seletor de arquivos do Google"
 
     def registrar_resposta(resposta: Response) -> None:
         nonlocal servidor_pediu_espera
@@ -248,40 +250,62 @@ def _enviar_csv(pagina: Page, camada: Camada, *, arrastar_csv: bool = False) -> 
     pagina.on("response", registrar_resposta)
     pagina.on("requestfailed", registrar_falha)
     try:
-        _conferir_csv_local(camada)
+        iframe.wait_for(state="visible")
+        etapa = 'abrir "Fazer upload" no seletor do Google'
+        upload.click()
+        etapa = "localizar o quadro de upload"
+        quadro = iframe.element_handle().content_frame()
+
         if arrastar_csv:
+            etapa = "soltar o CSV na área de upload"
+            _conferir_csv_local(camada)
+            envio_iniciado = True
             _soltar_arquivo(pagina, picker.get_by_text(_ARRASTAR_ARQUIVO), camada.arquivo)
         else:
             campo = picker.locator(_CAMPO_CSV_PICKER)
+            etapa = "localizar o campo de arquivo do Picker"
             try:
                 campo.wait_for(state="attached", timeout=2_000)
             except TimeoutError:
+                etapa = 'abrir o seletor nativo pelo botão "Procurar"'
                 with pagina.expect_file_chooser() as escolha:
                     picker.get_by_role("button", name=_PROCURAR).click()
+                etapa = "entregar o CSV ao seletor nativo"
+                _conferir_csv_local(camada)
+                envio_iniciado = True
                 escolha.value.set_files(camada.arquivo)
             else:
+                etapa = "preparar o campo de arquivo do Picker"
                 estado_campo = _observar_campo_csv(campo, camada)
+                etapa = "entregar o CSV ao campo de arquivo do Picker"
+                _conferir_csv_local(camada)
+                envio_iniciado = True
                 campo.set_input_files(camada.arquivo)
 
-        try:
-            _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
-        except TimeoutError:
-            exigir_sessao(pagina)
-            codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
-            erros_de_rede = f" ({', '.join(sorted(codigos_de_rede))})" if codigos_de_rede else ""
-            envio_transitorio = bool(status_envio & _HTTP_UPLOAD_TRANSITORIOS or falhas_envio & _REDE_UPLOAD_TRANSITORIOS)
-            houve_aceite = any(200 <= codigo < 300 or codigo == 308 for codigo in status_envio)
-            houve_recusa = any(400 <= codigo < 500 and codigo not in _HTTP_UPLOAD_TRANSITORIOS for codigo in status_http)
-            pode_repetir = envio_transitorio and not (houve_aceite or houve_recusa or servidor_pediu_espera)
-            tipo = ErroUploadTemporario if pode_repetir else ErroMapa
-            espera = " O servidor pediu um intervalo antes de nova tentativa." if servidor_pediu_espera else ""
-            raise tipo(
-                "O seletor de arquivos continuou aberto após o envio do CSV. "
-                f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}{erros_de_rede}."
-                f"{_diagnosticar_campo_csv(estado_campo)}{espera}"
-            ) from None
-
+        etapa = "confirmar o fim do envio no seletor do Google"
+        _aguardar_fim_do_upload(iframe, picker.get_by_role("button", name=_SELECIONAR))
         _conferir_csv_local(camada)
+    except (Error, OSError) as erro:
+        exigir_sessao(pagina)
+        _conferir_csv_local(camada)
+        expirou = isinstance(erro, TimeoutError)
+        motivo = "Tempo esgotado" if expirou else "Falha do navegador"
+        codigos = ", ".join(str(codigo) for codigo in sorted(status_http)) or "nenhuma resposta reconhecida"
+        erros_de_rede = f" ({', '.join(sorted(codigos_de_rede))})" if codigos_de_rede else ""
+        envio_transitorio = bool(status_envio & _HTTP_UPLOAD_TRANSITORIOS or falhas_envio & _REDE_UPLOAD_TRANSITORIOS)
+        houve_aceite = any(200 <= codigo < 300 or codigo == 308 for codigo in status_envio)
+        houve_recusa = any(400 <= codigo < 500 and codigo not in _HTTP_UPLOAD_TRANSITORIOS for codigo in status_http)
+        pode_repetir = (
+            (envio_transitorio or (expirou and not envio_iniciado))
+            and not (houve_aceite or houve_recusa or servidor_pediu_espera or pagina.is_closed())
+        )
+        tipo = ErroUploadTemporario if pode_repetir else ErroMapa
+        espera = " O servidor pediu um intervalo antes de nova tentativa." if servidor_pediu_espera else ""
+        raise tipo(
+            f"{motivo} ao {etapa}. "
+            f"HTTP do upload: {codigos}. Falhas de rede observadas: {falhas_de_rede}{erros_de_rede}."
+            f"{_diagnosticar_campo_csv(estado_campo)}{espera}"
+        ) from None
     finally:
         if estado_campo is not None:
             with suppress(Error):
@@ -415,6 +439,10 @@ def reimportar_camada(
         _confirmar_destino(pagina, mapa)
         if falha.count():
             raise ErroMapa(_IMPORTACAO_FALHOU)
+    except ErroUploadTemporario as erro:
+        if not pagina.is_closed() and falha.count():
+            raise ErroMapa(f"{_IMPORTACAO_FALHOU} {erro}") from None
+        raise
     except Error:
         exigir_sessao(pagina)
         if not pagina.is_closed() and falha.count():
