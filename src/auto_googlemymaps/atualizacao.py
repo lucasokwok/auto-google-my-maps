@@ -11,10 +11,18 @@ from playwright.sync_api import BrowserContext, Error
 
 from .configuracao import Configuracao, Mapa
 from .csvs import ResultadoMapa, validar_mapa
-from .mymaps import ErroMapa, ErroUploadTemporario, abrir_mapa, localizar_camada, reimportar_camada
+from .mymaps import (
+    ErroAtualizacaoRevertida,
+    ErroMapa,
+    ErroUploadTemporario,
+    abrir_mapa,
+    localizar_camada,
+    reimportar_camada,
+)
 from .navegador import NAVEGADOR_PADRAO, ErroAutenticacao, abrir_navegador
 
-_PAUSA_UPLOAD_SEGUNDOS = 2
+_MAX_RETENTATIVAS_CAMADA = 5
+_PAUSA_RETENTATIVA_SEGUNDOS = 2
 
 
 def _atualizar_mapa(
@@ -63,7 +71,8 @@ def _atualizar_mapa(
         reabrir_editor = False
         for camada, remota in remotas:
             operacao = camada.nome
-            for tentativa in (1, 2):
+            repetiu_upload = False
+            for tentativa in range(1, _MAX_RETENTATIVAS_CAMADA + 2):
                 try:
                     if reabrir_editor:
                         pagina.close()
@@ -77,14 +86,21 @@ def _atualizar_mapa(
                     reimportar_camada(pagina, mapa, remota, camada, coluna, arrastar_csv=arrastar_csv)
                 except ErroMapa as erro:
                     reabrir_editor = True
-                    if tentativa == 1 and isinstance(erro, ErroUploadTemporario):
+                    retentativa = None
+                    if tentativa <= _MAX_RETENTATIVAS_CAMADA:
+                        if isinstance(erro, ErroAtualizacaoRevertida):
+                            retentativa = f"Retentativa {tentativa}/{_MAX_RETENTATIVAS_CAMADA} após reversão"
+                        elif isinstance(erro, ErroUploadTemporario) and not repetiu_upload:
+                            repetiu_upload = True
+                            retentativa = "Nova tentativa de upload"
+                    if retentativa:
                         log.warning(
-                            "%s — %s — %s Nova tentativa de upload em %d s%s.",
-                            mapa.nome, operacao, erro, _PAUSA_UPLOAD_SEGUNDOS,
+                            "%s — %s — %s %s em %d s%s.",
+                            mapa.nome, operacao, erro, retentativa, _PAUSA_RETENTATIVA_SEGUNDOS,
                             " após a pausa de inspeção" if pausar_em_erro else "",
                         )
                         aguardar_inspecao("tentar novamente")
-                        sleep(_PAUSA_UPLOAD_SEGUNDOS)
+                        sleep(_PAUSA_RETENTATIVA_SEGUNDOS)
                         continue
                     registrar_falha(erro)
                 else:

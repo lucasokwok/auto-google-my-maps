@@ -442,14 +442,21 @@ def test_nome_divergente_no_csv_impede_marcar_qualquer_lado(pagina, corresponden
 def importacao(pagina, monkeypatch):
     estado = Mock()
     avisos = Mock()
-    locators = dict(visivel=Mock(), sucesso=Mock(), falha=Mock(), captcha=Mock(), radios=Mock(), butterbar=Mock())
+    locators = dict(
+        visivel=Mock(), sucesso=Mock(), falha=Mock(), reversao=Mock(), captcha=Mock(),
+        radios=Mock(), butterbar=Mock(), barra_de_avisos=Mock(),
+    )
     locators["captcha"].count.return_value = 0
     locators["falha"].count.return_value = 0
+    locators["reversao"].count.return_value = 0
+    texto_reversao = avisos.or_.return_value.get_by_text.return_value
+    texto_reversao.or_.return_value.and_.return_value = locators["reversao"]
     locators["radios"].and_.return_value.first.is_visible.return_value = False
     pagina.locator.side_effect = lambda css: (
         locators["radios"] if css == mymaps._RADIOS_CAMADA
         else locators["visivel"] if css == ":visible"
         else locators["butterbar"] if css == mymaps._SELETOR_AVISO_CAMADA
+        else locators["barra_de_avisos"] if css == "#butterbar-wrap"
         else avisos if 'role="status"' in css else locators["captcha"]
     )
 
@@ -486,7 +493,8 @@ def test_reimporta_correspondentes_e_exige_um_novo_sinal_de_sucesso(pagina, impo
         "A camada foi atualizada com novo conteúdo.", exact=True,
     )
     locators["sucesso"].first.wait_for.assert_called_once_with(state="hidden")
-    locators["sucesso"].or_.return_value.first.wait_for.assert_called_once_with(state="visible", timeout=45_000)
+    espera = locators["sucesso"].or_.return_value.or_.return_value.first.wait_for
+    espera.assert_called_once_with(state="visible", timeout=45_000)
     dialogo.wait_for.assert_called_once_with(state="hidden")
 
 
@@ -543,14 +551,48 @@ def test_aviso_de_falha_no_picker_impede_retentativa(pagina, importacao):
 def test_alerta_apos_conclusao_e_falha(pagina, importacao):
     _, remota, dialogo, locators = importacao
     locators["falha"].count.side_effect = [0, 1]
-    with pytest.raises(mymaps.ErroMapa, match="indicou falha"):
+    with pytest.raises(mymaps.ErroMapa, match="indicou falha") as erro:
         mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    assert type(erro.value) is mymaps.ErroMapa
     dialogo.get_by_role.return_value.click.assert_called_once()
+
+
+@pytest.mark.parametrize(("texto", "corresponde"), [
+    ("Ocorreu um erro. Sua última ação foi revertida.", True),
+    ("Ocorreu um erro. Sua última ação foi revertida.Ignorar", True),
+    ("Ocorreu um erro. Sua última ação foi revertida. Ignorar", True),
+    ("Ocorreu um erro.", False),
+    ("Ocorreu um erro. Sua última ação foi revertida. Confira outras alterações.", False),
+])
+def test_reconhece_somente_o_aviso_exato_de_reversao(texto, corresponde):
+    assert bool(mymaps._REVERSAO.fullmatch(texto)) is corresponde
+
+
+@pytest.mark.parametrize("clique_expirou", [False, True])
+def test_novo_aviso_de_reversao_apos_concluir_permite_repetir(pagina, importacao, clique_expirou):
+    _, remota, dialogo, locators = importacao
+    locators["reversao"].count.side_effect = [0, 1]
+    concluir = dialogo.get_by_role.return_value
+    if clique_expirou:
+        concluir.click.side_effect = TimeoutError("DETALHE_FICTICIO")
+
+    with pytest.raises(mymaps.ErroAtualizacaoRevertida, match="Sua última ação foi revertida"):
+        mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    concluir.click.assert_called_once()
+
+
+def test_aviso_de_reversao_preexistente_bloqueia_concluir(pagina, importacao):
+    _, remota, dialogo, locators = importacao
+    locators["reversao"].count.return_value = 1
+    with pytest.raises(mymaps.ErroMapa, match="indicou falha") as erro:
+        mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    assert type(erro.value) is mymaps.ErroMapa
+    dialogo.get_by_role.return_value.click.assert_not_called()
 
 
 def test_fechamento_do_dialogo_sem_sinal_nao_confirma(pagina, importacao):
     _, remota, dialogo, locators = importacao
-    locators["sucesso"].or_.return_value.first.wait_for.side_effect = TimeoutError("SEM_SINAL")
+    locators["sucesso"].or_.return_value.or_.return_value.first.wait_for.side_effect = TimeoutError("SEM_SINAL")
     with pytest.raises(mymaps.ErroMapa, match="Resultado indeterminado") as erro:
         mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
     assert "SEM_SINAL" not in str(erro.value)

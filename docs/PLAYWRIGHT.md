@@ -31,6 +31,8 @@ Se o navegador falhar durante a seleção ou o envio, o log identifica a etapa, 
 
 O programa aguarda dois segundos e tenta a mesma camada uma vez em uma nova página se o prazo se esgotar antes da entrega, se houver uma falha temporária reconhecida no upload ou se o seletor permanecer aberto após 60 segundos. A última condição se aplica mesmo com respostas HTTP `200` ou `204`, pois elas confirmam requisições do navegador e o fluxo ainda está antes de **Concluir**. Recusas de acesso, limites de requisições e pedidos de espera do servidor impedem a retentativa quando reconhecidos. O resultado indeterminado após **Concluir** fica para conferência porque o mapa pode já ter sido atualizado.
 
+Se um novo aviso **Ocorreu um erro. Sua última ação foi revertida.** aparecer após **Concluir**, o programa registra a reversão, espera dois segundos e reabre a mesma camada em uma página nova. O limite é de cinco retentativas por camada, incluindo uma eventual retentativa de upload anterior à confirmação. Uma falha genérica após **Concluir**, um aviso anterior à ação ou um resultado indeterminado fica para conferência. Se o limite acabar, o programa registra a falha e segue para as demais camadas.
+
 `atualizar --pausar-em-erro` mantém a página da falha aberta até que você pressione **Enter** no terminal. A pausa ocorre antes de reabrir o mapa para uma retentativa, passar à próxima camada ou encerrar. O navegador continua ativo durante a inspeção, então avisos temporários podem desaparecer. Use **Ctrl+C** para encerrar sem seguir para a próxima operação.
 
 ## Validação efetiva e limites

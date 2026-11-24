@@ -8,7 +8,7 @@ import pytest
 from auto_googlemymaps import atualizacao
 from auto_googlemymaps.__main__ import main
 from auto_googlemymaps.csvs import CAMADAS
-from auto_googlemymaps.mymaps import ErroMapa, ErroUploadTemporario
+from auto_googlemymaps.mymaps import ErroAtualizacaoRevertida, ErroMapa, ErroUploadTemporario
 from auto_googlemymaps.navegador import ErroAutenticacao
 
 CSV = b"CHAVE,Latitude,Longitude,Nome\nID_FICTICIO,0,0,DADO_FICTICIO\n"
@@ -166,9 +166,36 @@ def test_upload_temporario_tem_uma_nova_tentativa_e_processa_a_proxima_camada(
     assert ("ERROR" in log) is not recuperou
 
 
+@pytest.mark.parametrize(("reversoes", "recuperou"), [(2, True), (5, True), (6, False)])
+def test_reversao_permite_ate_cinco_retentativas_e_segue_para_a_proxima_camada(
+    execucao, tmp_path, monkeypatch, reversoes, recuperou,
+):
+    erro = ErroAtualizacaoRevertida("Ocorreu um erro. Sua última ação foi revertida.")
+    paginas = [Mock() for _ in range(reversoes + 1)]
+    execucao.contexto.new_page.side_effect = paginas
+    execucao.reimportar.side_effect = [erro] * reversoes + [None, None]
+    pausa = Mock()
+    monkeypatch.setattr(atualizacao, "sleep", pausa)
+
+    assert main(["atualizar", "--mapa", "A"]) == (0 if recuperou else 1)
+    tentativas = [chamada.args for chamada in execucao.reimportar.call_args_list]
+    paginas_primeira = paginas if recuperou else paginas[:-1]
+    esperadas = [(pagina, CAMADAS[0]) for pagina in paginas_primeira] + [(paginas[-1], CAMADAS[1])]
+    assert [(args[0], args[3].nome) for args in tentativas] == esperadas
+    retentativas = min(reversoes, 5)
+    assert [chamada.args for chamada in pausa.call_args_list] == [(2,)] * retentativas
+    log = (tmp_path / "logs" / "atualizacao.log").read_text(encoding="utf-8")
+    assert log.count("após reversão em 2 s.") == retentativas
+    assert f"Retentativa {retentativas}/5 após reversão" in log
+    assert "A — pontos_02.csv — atualização confirmada" in log
+    if not recuperou:
+        assert f"A — pontos_01.csv — {erro} (0/2 camada(s) confirmada(s))" in log
+
+
 @pytest.mark.parametrize(("erro", "codigo", "proximo_passo"), [
     (ErroMapa("Falha na camada"), 1, "continuar"),
     (ErroUploadTemporario("Seletor ficou aberto"), 0, "tentar novamente"),
+    (ErroAtualizacaoRevertida("Sua última ação foi revertida."), 0, "tentar novamente"),
 ])
 def test_opcao_pausa_com_a_pagina_da_falha_aberta(execucao, tmp_path, monkeypatch, erro, codigo, proximo_passo):
     pagina, seguinte = Mock(), Mock()

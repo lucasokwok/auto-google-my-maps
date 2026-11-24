@@ -48,6 +48,8 @@ _FALHA = re.compile(
     r"Ocorreu um erro|Algumas linhas não puderam ser exibidas)\b",
     re.IGNORECASE,
 )
+_MENSAGEM_REVERSAO = "Ocorreu um erro. Sua última ação foi revertida."
+_REVERSAO = re.compile(rf"^{re.escape(_MENSAGEM_REVERSAO)}(?:\s*Ignorar)?$", re.IGNORECASE)
 _IMPORTACAO_FALHOU = "A interface indicou falha na importação. Confira a camada antes de tentar novamente."
 _IFRAME_PICKER = (
     'iframe.picker-frame, iframe[src^="https://docs.google.com/picker"], '
@@ -68,6 +70,10 @@ class ErroMapa(RuntimeError):
 
 class ErroUploadTemporario(ErroMapa):
     """Falha na seleção ou no envio do CSV que admite uma nova tentativa."""
+
+
+class ErroAtualizacaoRevertida(ErroMapa):
+    """O My Maps informou que reverteu a ação de concluir a atualização."""
 
 
 class _SeletorUploadPendente(TimeoutError):
@@ -432,8 +438,20 @@ def reimportar_camada(
     aviso_da_camada = pagina.locator(_SELETOR_AVISO_CAMADA).get_by_text(_SUCESSO_CAMADA, exact=True)
     sucesso = avisos.get_by_text(_SUCESSO).or_(avisos.filter(has_text=_SUCESSO)).or_(aviso_da_camada).and_(visivel)
     falha = avisos.get_by_text(_FALHA).or_(avisos.filter(has_text=_FALHA)).and_(visivel)
+    avisos_de_reversao = avisos.or_(pagina.locator("#butterbar-wrap"))
+    reversao = avisos_de_reversao.get_by_text(_REVERSAO).or_(
+        avisos_de_reversao.filter(has_text=_REVERSAO)
+    ).and_(visivel)
     etapa = "abrir o menu de opções da camada"
     enviada = False
+
+    def verificar_falha() -> None:
+        aviso_de_reversao = reversao.count()
+        if enviada and aviso_de_reversao:
+            raise ErroAtualizacaoRevertida(_MENSAGEM_REVERSAO) from None
+        if aviso_de_reversao or falha.count():
+            raise ErroMapa(_IMPORTACAO_FALHOU) from None
+
     try:
         _confirmar_destino(pagina, mapa)
         remota.cabecalho.hover()
@@ -455,27 +473,24 @@ def reimportar_camada(
 
         etapa = "confirmar o resultado da reimportação na interface"
         sucesso.first.wait_for(state="hidden")
-        if falha.count():
-            raise ErroMapa(_IMPORTACAO_FALHOU)
         _confirmar_destino(pagina, mapa)
         concluir.wait_for(state="visible")
+        verificar_falha()
         enviada = True
         concluir.click()
-        sucesso.or_(falha).first.wait_for(state="visible", timeout=45_000)
-        if falha.count():
-            raise ErroMapa(_IMPORTACAO_FALHOU)
+        sucesso.or_(falha).or_(reversao).first.wait_for(state="visible", timeout=45_000)
+        verificar_falha()
         dialogo.wait_for(state="hidden")
         _confirmar_destino(pagina, mapa)
-        if falha.count():
-            raise ErroMapa(_IMPORTACAO_FALHOU)
+        verificar_falha()
     except ErroUploadTemporario as erro:
-        if not pagina.is_closed() and falha.count():
+        if not pagina.is_closed() and (reversao.count() or falha.count()):
             raise ErroMapa(f"{_IMPORTACAO_FALHOU} {erro}") from None
         raise
     except Error:
         exigir_sessao(pagina)
-        if not pagina.is_closed() and falha.count():
-            raise ErroMapa(_IMPORTACAO_FALHOU) from None
+        if not pagina.is_closed():
+            verificar_falha()
         if enviada:
             raise ErroMapa(
                 "Resultado indeterminado após enviar a atualização. Confira a camada antes de tentar novamente."
