@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 _RESERVED = {"CON", "PRN", "AUX", "NUL"} | {
     f"{prefix}{n}" for prefix in ("COM", "LPT") for n in range(1, 10)
 }
-_STRATEGIES = {"atualizar_correspondentes", "substituir_todos"}
+ESTRATEGIA = "atualizar_correspondentes"
+_HOSTS = {"google.com", "www.google.com", "mymaps.google.com"}
+_CAMINHO_EDICAO = re.compile(r"/maps/d/(?:u/[0-9]+/)?edit/?")
 
 
 class ErroConfiguracao(ValueError):
@@ -21,7 +23,7 @@ class ErroConfiguracao(ValueError):
 @dataclass(frozen=True)
 class Mapa:
     nome: str
-    url: str
+    url: str = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -41,18 +43,28 @@ def validar_nome(nome: object) -> str:
     return nome
 
 
-def validar_url(url: object) -> str:
-    if not isinstance(url, str) or not url.strip() or url != url.strip():
-        raise ErroConfiguracao("URL de mapa não informada")
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in {"google.com", "www.google.com", "mymaps.google.com"}:
+def identificador_mapa(url: str) -> str:
+    """Valida um link de edição e devolve o identificador para comparar destinos."""
+    if not url or re.search(r"[\s\x00-\x1f\x7f\\]", url):
+        raise ErroConfiguracao("URL de mapa ausente ou malformada")
+    try:
+        partes = urlsplit(url)
+    except ValueError:
+        raise ErroConfiguracao("URL de mapa malformada") from None
+    if partes.scheme != "https" or partes.netloc.lower() not in _HOSTS or "#" in url:
         raise ErroConfiguracao("URL precisa ser um link HTTPS válido do Google My Maps")
-    if not (parsed.path.startswith("/maps/d/") or parsed.hostname == "mymaps.google.com"):
+    if not _CAMINHO_EDICAO.fullmatch(partes.path):
         raise ErroConfiguracao("URL não corresponde à edição do Google My Maps")
-    if not parse_qs(parsed.query).get("mid"):
-        raise ErroConfiguracao("URL precisa conter o identificador mid do mapa")
-    if parsed.username or parsed.password or parsed.fragment:
-        raise ErroConfiguracao("URL contém partes não permitidas")
+    mids = parse_qs(partes.query, keep_blank_values=True).get("mid", [])
+    if len(mids) != 1 or not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", mids[0]):
+        raise ErroConfiguracao("URL precisa conter um único identificador mid válido")
+    return mids[0]
+
+
+def validar_url(url: object) -> str:
+    if not isinstance(url, str):
+        raise ErroConfiguracao("URL de mapa não informada")
+    identificador_mapa(url)
     return url
 
 
@@ -62,32 +74,36 @@ def carregar_configuracao(caminho: Path) -> Configuracao:
         raise ErroConfiguracao("Configuração privada ausente; copie config/mapas.example.json para config/mapas.json")
     try:
         dados = json.loads(caminho.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         raise ErroConfiguracao("Não foi possível ler config/mapas.json; confira o formato JSON e a codificação") from None
     if not isinstance(dados, dict):
         raise ErroConfiguracao("O JSON precisa conter um objeto")
     coluna = dados.get("coluna_identificacao")
     if not isinstance(coluna, str) or not coluna.strip():
         raise ErroConfiguracao("Informe a coluna_identificacao")
-    estrategia = dados.get("estrategia_reimportacao", "atualizar_correspondentes")
-    if estrategia not in _STRATEGIES:
-        raise ErroConfiguracao("estrategia_reimportacao inválida")
+    estrategia = dados.get("estrategia_reimportacao", ESTRATEGIA)
+    if estrategia != ESTRATEGIA:
+        raise ErroConfiguracao(f"estrategia_reimportacao deve ser {ESTRATEGIA}")
     entradas = dados.get("mapas")
     if not isinstance(entradas, list) or not entradas:
         raise ErroConfiguracao("Informe uma lista não vazia de mapas")
     mapas = []
     nomes = set()
-    urls = set()
+    identificadores = set()
     for item in entradas:
         if not isinstance(item, dict):
             raise ErroConfiguracao("Cada mapa deve ser um objeto com NomeMapa e URL")
         nome = validar_nome(item.get("NomeMapa"))
-        url = validar_url(item.get("URL"))
+        try:
+            url = validar_url(item.get("URL"))
+        except ErroConfiguracao as exc:
+            raise ErroConfiguracao(f"{nome} — {exc}") from None
+        identificador = identificador_mapa(url)
         if nome.casefold() in nomes:
             raise ErroConfiguracao("Há NomeMapa duplicado")
-        if url in urls:
-            raise ErroConfiguracao("Há URLs repetidas na configuração")
+        if identificador in identificadores:
+            raise ErroConfiguracao("Há links para o mesmo mapa na configuração")
         nomes.add(nome.casefold())
-        urls.add(url)
+        identificadores.add(identificador)
         mapas.append(Mapa(nome=nome, url=url))
     return Configuracao(coluna, estrategia, tuple(mapas))

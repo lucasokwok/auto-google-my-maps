@@ -15,8 +15,13 @@
 *.kmz
 *.gpx
 
+# Scripts locais do Agendador de Tarefas do Windows
+*.[bB][aA][tT]
+!/atualizar-mymaps.example.bat
+
 # Sessões, perfis e possíveis segredos de autenticação
 /runtime/
+/src/runtime/
 /logs/
 /auth/
 /.auth/

@@ -1,33 +1,44 @@
 # Playwright e Google My Maps
 
-## Escopo da integração de navegador
+## Autenticação e recuperação de sessão
 
-Usar Playwright **somente** para as interações na interface web do Google My Maps. Nenhuma API de planilhas ou método não oficial de escrita no Google é necessário para este desenho.
+`login` usa `launch_persistent_context()` com uma janela visível. O padrão é o Chromium do Playwright. Com `--navegador edge`, o Playwright abre o Microsoft Edge instalado pelo canal `msedge`. Conclua o login manual na conta com acesso de edição e pressione Enter quando a página Minha Conta abrir. O programa verifica o acesso à página pela mesma sessão antes de fechar o navegador. [Navegadores com suporte no Playwright](https://playwright.dev/python/docs/browsers#google-chrome--microsoft-edge)
 
-A rotina ainda a implementar deverá:
+`atualizar` reutiliza o perfil indicado em `--perfil-dir` e abre uma página por mapa. Os perfis padrão são `runtime/google_profile/` no Chromium e `runtime/google_profile_edge/` no Edge. Se o Google redirecionar para o login, sinalizar sessão não autorizada ou apresentar uma verificação reconhecida, a atualização é interrompida com uma mensagem no terminal e no log. Renove a sessão com o mesmo navegador e perfil e confira a última camada processada antes de repetir o comando.
 
-1. Utilizar uma sessão autenticada previamente, guardada localmente em `runtime/`.
-2. Navegar para a URL de edição do mapa (sem registrar essa URL em logs).
-3. Encontrar cada camada pelo nome exato do arquivo: `pontos_01.csv`, ..., `pontos_05.csv`.
-4. Acionar **Reimportar e mesclar → Reimportar → Atualizar itens correspondentes**.
-5. Selecionar o CSV local apropriado no seletor de upload.
-6. Informar a coluna de identificação para a correspondência, quando solicitada.
-7. Verificar o resultado da operação antes de seguir para a próxima camada.
+Mantenha o perfil em um diretório local persistente. Use um processo por perfil de cada vez. Se o navegador não iniciar, confirme a instalação, a disponibilidade de uma sessão gráfica e se outro processo está usando o perfil. A aceitação do login pelo Google depende do ambiente em que o navegador é executado.
 
-### Autenticação
+### Sessão dedicada no Edge do Windows
 
-Execute `python -m auto_googlemymaps login` para abrir o navegador e entrar manualmente na conta Google que possui acesso de edição aos mapas. O aplicativo **não solicita, lê ou armazena a senha**. A pasta persistente do navegador fica em `runtime/chromium-profile/` e está ignorada pelo Git.
+Em um teste manual no Windows, o login aberto pelo Playwright recebeu a mensagem **Este navegador ou app pode não ser seguro**. A sessão foi criada no Edge iniciado diretamente, com `--user-data-dir` apontando para `%LOCALAPPDATA%\auto-google-my-maps\edge-profile`. Após fechar essa janela, o comando `login --navegador edge --perfil-dir` reabriu o mesmo perfil e confirmou o acesso à página **Minha Conta**. [Comandos no README](../README.md#login-confirmado-com-o-edge-no-windows) · [Configuração UserDataDir do Edge](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-browser-policies/userdatadir)
 
-### Confiabilidade
+O caminho em `%LOCALAPPDATA%` mantém o perfil fora do repositório e do OneDrive. Em `edge://version`, verifique se o **Caminho do perfil** fica dentro do diretório configurado. O comando deve receber o diretório informado a `--user-data-dir`. Feche as janelas desse perfil antes de trocar entre o Edge aberto diretamente e o Playwright.
 
-- Preferir locators semânticos (`get_by_role`, `get_by_text`) e esperas explícitas.
-- Não basear a lógica em pausas fixas nem coordenadas de tela.
-- Usar `set_input_files()` quando houver `<input type="file">` acessível.
-- Processar uma camada por vez e registrar o status por mapa/camada.
-- Falhar de forma fechada: se a interface divergir, interromper o mapa em vez de adivinhar cliques.
-- Não publicar capturas, rastros, perfil autenticado ou URLs.
-- Não automatizar digitação de senha ou contornar desafios de segurança.
+Se a sessão expirar, abra o Edge diretamente com a mesma pasta e faça o login manual. Feche a janela e repita a verificação com o Playwright. Use o mesmo `--navegador` e o mesmo `--perfil-dir` para atualizar.
 
-A reimportação está descrita na ajuda oficial do My Maps: https://support.google.com/mymaps/answer/3024836?hl=pt-BR.
+## Reimportação
 
-**Estado:** esta parte é uma especificação de implementação; a rotina de reimportação ainda não foi implementada.
+1. Abra a URL de edição cadastrada e confirme o `mid` do mapa de destino.
+2. Aguarde o título exato de cada camada e associe-o a um único cabeçalho da legenda com controle de visibilidade e menu de opções. O log distingue um título ausente de um título que não pôde ser associado ao menu.
+3. Acesse **Reimportar e mesclar → Reimportar → Atualizar itens relacionados**. A opção também pode aparecer como **Atualizar itens correspondentes** ou **Update matching items**.
+4. No seletor do Google, abra **Fazer upload**. Ao localizar o campo oculto `input[type="file"][jsname="G1bupd"]` que aceita CSV, o Playwright aguarda dois segundos para dar tempo de o seletor inicializar e então entrega o caminho com `set_input_files()`. A mesma pausa vale para uma retentativa pelo campo. Em outras versões da interface, o programa usa **Procurar** para localizar o campo acionado pelo botão. A opção `--arrastar-csv` permite testar a área de soltar arquivos. O aplicativo confere o CSV original, confirma em **Selecionar** quando necessário e aguarda o fechamento da tela de upload. [Envio de arquivos no Playwright](https://playwright.dev/python/docs/input#upload-files)
+5. Selecione a coluna configurada nos grupos **Layer data** e **Uploaded data** (ou **Dados da camada** e **Dados enviados**). Nos controles de opção, o programa aceita o BOM inicial que o My Maps pode exibir como parte do nome da coluna e verifica se os dois lados estão marcados antes de clicar em **Concluir**.
+6. Aguarde o fechamento do assistente e um novo aviso de sucesso. No teste no Edge, o My Maps exibiu **A camada foi atualizada com novo conteúdo.** após **Concluir**, na barra de notificações. O programa aceita esse texto quando ele aparece depois do clique. Um aviso de falha, um diálogo inesperado ou a ausência de confirmação após o envio encerra a tentativa daquela camada. O erro fica no log e a próxima camada começa em uma nova página do editor.
+
+Pela semântica documentada pelo Google, a operação inclui os itens novos, atualiza os correspondentes e remove os ausentes do CSV. Os correspondentes podem manter estilos personalizados e fotos. [Ajuda oficial do Google My Maps](https://support.google.com/mymaps/answer/3024836?hl=pt-BR)
+
+Se o navegador falhar durante a seleção ou o envio, o log identifica a etapa, como abrir **Fazer upload**, acionar **Procurar**, preparar o campo, entregar o CSV ou aguardar a confirmação do seletor. Quando disponíveis, também registra se o campo recebeu o nome e o tamanho esperados, os códigos HTTP observados e as falhas de rede reconhecidas. Se o seletor continuar aberto, o log também registra o estado de **Selecionar**, **Procurar**, da barra de progresso e dos alertas, sem registrar o conteúdo exibido. A reimportação só é confirmada na interface do mapa. URLs, cabeçalhos e corpos de requisição ficam fora do log.
+
+O programa aguarda dois segundos e tenta a mesma camada uma vez em uma nova página se o prazo se esgotar antes da entrega, se houver uma falha temporária reconhecida no upload ou se o seletor permanecer aberto após 60 segundos. A última condição se aplica mesmo com respostas HTTP `200` ou `204`, pois elas confirmam requisições do navegador e o fluxo ainda está antes de **Concluir**. Recusas de acesso, limites de requisições e pedidos de espera do servidor impedem a retentativa quando reconhecidos. O resultado indeterminado após **Concluir** fica para conferência porque o mapa pode já ter sido atualizado.
+
+Se um novo aviso **Ocorreu um erro. Sua última ação foi revertida.** aparecer após **Concluir**, o programa registra a reversão, espera dois segundos e reabre a mesma camada em uma página nova. O limite é de cinco retentativas por camada, incluindo uma eventual retentativa de upload anterior à confirmação. Uma falha genérica após **Concluir**, um aviso anterior à ação ou um resultado indeterminado fica para conferência. Se o limite acabar, o programa registra a falha e segue para as demais camadas.
+
+`atualizar --pausar-em-erro` mantém a página da falha aberta até que você pressione **Enter** no terminal. A pausa ocorre antes de reabrir o mapa para uma retentativa, passar à próxima camada ou encerrar. O navegador continua ativo durante a inspeção, então avisos temporários podem desaparecer. Use **Ctrl+C** para encerrar sem seguir para a próxima operação.
+
+## Validação efetiva e limites
+
+Os testes automatizados com mocks cobrem a navegação para o editor, a seleção de camadas, as etapas do Picker, a correspondência e os caminhos de erro. Um ensaio em Chromium com páginas simuladas exercitou a interação em português e inglês, incluindo o envio de um CSV com BOM.
+
+Um teste manual no Edge do Windows reutilizou a sessão e confirmou a atualização de uma camada no editor autenticado. Em outra execução, o campo recebeu o CSV e o seletor continuou aberto após respostas HTTP `200` e `204`. A retentativa desse cenário foi exercitada com páginas simuladas no Chromium e ainda precisa ser confirmada no Edge do Windows. Os seletores usam textos e nomes acessíveis em inglês e português e dependem da estrutura semântica da legenda. Variações de interface podem interromper a operação.
+
+Fechar um diálogo não é confirmação de sucesso. Se o log indicar **resultado indeterminado**, abra o mapa, confira os dados e o estilo da camada indicada e só então decida se é necessário repetir. A atualização de várias camadas não é uma transação única. Execute primeiro em mapas fictícios e compare o efeito por ID depois de reabrir o mapa.
