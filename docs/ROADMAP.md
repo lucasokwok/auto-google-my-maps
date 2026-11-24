@@ -13,7 +13,8 @@
 
 - [x] Confirmar o reaproveitamento da sessão na página Minha Conta, criada manualmente no Edge com perfil dedicado no Windows.
 - [ ] Confirmar a detecção de sessão expirada no editor e o reinício após renovar a sessão.
-- [ ] Confirmar os seletores do editor, dos menus, do Picker e do assistente de correspondência.
+- [x] Confirmar os seletores do editor, dos menus e do envio pelo Picker no mapa fictício do Rio.
+- [ ] Confirmar a seleção automática da coluna de identificação nos dois grupos do assistente.
 - [ ] Identificar os sinais reais de sucesso e falha e confirmar que podem ser detectados.
 - [ ] Executar o procedimento do README nos mapas fictícios de uma, duas e cinco camadas.
 - [ ] Reabrir os mapas e verificar adição, remoção, atualização e preservação do estilo dos itens correspondentes.

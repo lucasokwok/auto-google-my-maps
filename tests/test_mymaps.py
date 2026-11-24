@@ -241,14 +241,53 @@ def test_rejeita_coluna_ausente_ou_duplicada_no_editor(ocorrencias):
 
 
 @pytest.fixture
+def correspondencia_radio(pagina):
+    opcoes = pagina.locator.return_value.and_.return_value
+    opcoes.first.is_visible.return_value = True
+    painel = opcoes.locator.return_value
+    grupos = {seletor: Mock() for seletor in (mymaps._RADIOS_CAMADA, mymaps._RADIOS_CSV)}
+    painel.locator.side_effect = lambda seletor: grupos.get(seletor, painel)
+    radios = [grupo.get_by_role.return_value.and_.return_value for grupo in grupos.values()]
+    for radio, nome in zip(radios, ("\ufeffID", "ID")):
+        radio.locator.return_value.get_attribute.return_value = nome
+        radio.get_attribute.return_value = "false"
+    return painel, grupos, radios
+
+
+def test_seleciona_id_em_ambos_os_grupos_com_ou_sem_bom(pagina, correspondencia_radio):
+    painel, grupos, radios = correspondencia_radio
+    selecionado, _ = mymaps._preparar_correspondencia(pagina, "ID")
+    assert selecionado is painel
+    for grupo in grupos.values():
+        nome = grupo.get_by_role.call_args.kwargs["name"]
+        assert nome.fullmatch("ID") and nome.fullmatch("\ufeffID")
+        assert not nome.fullmatch("OutroID")
+    for radio in radios:
+        radio.click.assert_called_once()
+        radio.and_.return_value.wait_for.assert_called_once_with(state="visible")
+
+
+def test_nome_divergente_no_csv_impede_marcar_qualquer_lado(pagina, correspondencia_radio):
+    _, _, radios = correspondencia_radio
+    radios[1].locator.return_value.get_attribute.return_value = "Outra"
+    with pytest.raises(mymaps.ErroMapa, match="não corresponde ao configurado"):
+        mymaps._preparar_correspondencia(pagina, "ID")
+    for radio in radios:
+        radio.click.assert_not_called()
+
+
+@pytest.fixture
 def importacao(pagina, monkeypatch):
     estado = Mock()
     avisos = Mock()
-    locators = {"visivel": Mock(), "sucesso": Mock(), "falha": Mock(), "captcha": Mock()}
+    locators = dict(visivel=Mock(), sucesso=Mock(), falha=Mock(), captcha=Mock(), radios=Mock())
     locators["captcha"].count.return_value = 0
     locators["falha"].count.return_value = 0
+    locators["radios"].and_.return_value.first.is_visible.return_value = False
     pagina.locator.side_effect = lambda css: (
-        locators["visivel"] if css == ":visible" else avisos if 'role="status"' in css else locators["captcha"]
+        locators["radios"] if css == mymaps._RADIOS_CAMADA
+        else locators["visivel"] if css == ":visible"
+        else avisos if 'role="status"' in css else locators["captcha"]
     )
 
     def aviso(regex):
