@@ -21,11 +21,13 @@ Se a sessão expirar, abra o Edge diretamente com a mesma pasta e faça o login 
 1. Abra a URL de edição cadastrada e confirme o `mid` do mapa de destino.
 2. Aguarde o título exato de cada camada e associe-o a um único cabeçalho da legenda com controle de visibilidade e menu de opções. O log distingue um título ausente de um título que não pôde ser associado ao menu.
 3. Acesse **Reimportar e mesclar → Reimportar → Atualizar itens relacionados**. A opção também pode aparecer como **Atualizar itens correspondentes** ou **Update matching items**.
-4. No seletor de arquivos do Google, abra **Fazer upload → Procurar**. O Playwright entrega o caminho do CSV original ao seletor acionado pelo botão. Para testar a área **ou arraste um arquivo até aqui**, adicione `--arrastar-csv` ao comando `atualizar`. Nos dois modos o aplicativo confere o conteúdo do arquivo original, confirma em **Selecionar** quando necessário e aguarda o fechamento da tela de upload. Se o seletor continuar aberto, o log informa os códigos HTTP reconhecidos para o upload e a contagem de falhas de rede, sem URLs ou dados da requisição.
+4. No seletor do Google, abra **Fazer upload**. Quando estiver presente o campo oculto `input[type="file"][jsname="G1bupd"]` que aceita CSV, o Playwright entrega o caminho diretamente com `set_input_files()`. Em outras versões da interface, o programa usa **Procurar** para localizar o campo acionado pelo botão. A opção `--arrastar-csv` permite testar a área de soltar arquivos. O aplicativo confere o CSV original, confirma em **Selecionar** quando necessário e aguarda o fechamento da tela de upload. [Envio de arquivos no Playwright](https://playwright.dev/python/docs/input#upload-files)
 5. Selecione a coluna configurada nos campos **Dados da camada** e **Dados enviados**. Clique em **Concluir**.
 6. Aguarde um aviso novo e explícito de sucesso e o fechamento do assistente. Um aviso de falha, um diálogo inesperado ou a ausência de confirmação após o envio interrompe o mapa.
 
 Pela semântica documentada pelo Google, a operação inclui os itens novos, atualiza os correspondentes e remove os ausentes do CSV. Os correspondentes podem manter estilos personalizados e fotos. [Ajuda oficial do Google My Maps](https://support.google.com/mymaps/answer/3024836?hl=pt-BR)
+
+Se o seletor continuar aberto, o log registra se o campo emitiu `change` com o nome e o tamanho esperados. Também registra códigos HTTP de envio e de requisições de escrita ou preflight iniciadas pelo Picker, além dos códigos de falha de rede reconhecidos. Esses sinais diagnosticam o envio. A reimportação só é confirmada na interface do mapa. URLs, cabeçalhos e corpos de requisição ficam fora do log.
 
 ## Validação efetiva e limites
 

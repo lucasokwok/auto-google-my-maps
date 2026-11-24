@@ -113,6 +113,7 @@ def test_procurar_abre_o_seletor_e_envia_o_arquivo_validado(pagina, camada_local
     iframe = pagina.locator.return_value.and_.return_value
     iframe.is_visible.return_value = False
     picker = iframe.content_frame
+    picker.locator.return_value.wait_for.side_effect = TimeoutError("Campo específico ausente")
     pagina.expect_file_chooser.return_value = MagicMock()
     escolha = pagina.expect_file_chooser.return_value.__enter__.return_value
 
@@ -120,6 +121,22 @@ def test_procurar_abre_o_seletor_e_envia_o_arquivo_validado(pagina, camada_local
     pagina.expect_file_chooser.assert_called_once()
     picker.get_by_role.assert_any_call("button", name=mymaps._PROCURAR)
     escolha.value.set_files.assert_called_once_with(camada_local.arquivo)
+
+
+def test_preferencia_pelo_campo_csv_especifico_sem_abrir_procurar(pagina, camada_local):
+    iframe = pagina.locator.return_value.and_.return_value
+    iframe.is_visible.return_value = False
+    picker = iframe.content_frame
+    campo = picker.locator.return_value
+
+    mymaps._enviar_csv(pagina, camada_local)
+
+    picker.locator.assert_called_once_with('input[type="file"][jsname="G1bupd"][accept*=".csv" i]')
+    campo.wait_for.assert_called_once_with(state="attached", timeout=2_000)
+    assert campo.evaluate_handle.call_args.args[1] == {"nome": camada_local.nome, "bytes": len(camada_local.conteudo)}
+    campo.set_input_files.assert_called_once_with(camada_local.arquivo)
+    campo.evaluate_handle.return_value.dispose.assert_called_once()
+    pagina.expect_file_chooser.assert_not_called()
 
 
 def test_arrastar_entrega_o_arquivo_validado_na_area_do_picker(pagina, camada_local):
@@ -182,14 +199,22 @@ def test_upload_explicito_aguarda_selecionar_ser_habilitado():
 
 
 def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local, monkeypatch):
-    pagina.expect_file_chooser.return_value = MagicMock()
     eventos = {}
     pagina.on.side_effect = eventos.__setitem__
-    upload = SimpleNamespace(method="POST", url="https://docs.google.com/upload?token=DETALHE_FICTICIO")
-    outra_requisicao = SimpleNamespace(method="POST", url="https://docs.google.com/outra")
+    iframe = pagina.locator.return_value.and_.return_value
+    quadro = iframe.element_handle.return_value.content_frame.return_value
+    estado = iframe.content_frame.locator.return_value.evaluate_handle.return_value
+    estado.json_value.return_value = {"mudou": True, "corresponde": True}
+    upload = SimpleNamespace(
+        method="POST", url="https://docs.google.com/upload?token=DETALHE_FICTICIO",
+        frame=quadro, failure="net::ERR_CONNECTION_RESET",
+    )
+    rpc_picker = SimpleNamespace(method="POST", url="https://docs.google.com/rpc", frame=quadro)
+    outra_requisicao = SimpleNamespace(method="POST", url="https://docs.google.com/outra", frame=None)
 
     def aguardar_upload(iframe, selecionar):
         eventos["response"](SimpleNamespace(request=upload, status=403))
+        eventos["response"](SimpleNamespace(request=rpc_picker, status=400))
         eventos["response"](SimpleNamespace(request=outra_requisicao, status=500))
         eventos["requestfailed"](upload)
         raise TimeoutError("DETALHE_FICTICIO")
@@ -197,7 +222,8 @@ def test_picker_aberto_apos_upload_informa_status_sem_urls(pagina, camada_local,
     monkeypatch.setattr(mymaps, "_aguardar_fim_do_upload", aguardar_upload)
     with pytest.raises(mymaps.ErroMapa, match="continuou aberto após o envio") as erro:
         mymaps._enviar_csv(pagina, camada_local)
-    assert "HTTP do upload: 403. Falhas de rede observadas: 1." in str(erro.value)
+    assert "HTTP do upload: 400, 403. Falhas de rede observadas: 1 (ERR_CONNECTION_RESET)." in str(erro.value)
+    assert "O campo recebeu um arquivo com o nome e tamanho esperados." in str(erro.value)
     assert "500" not in str(erro.value)
     assert "DETALHE_FICTICIO" not in str(erro.value)
     for evento, callback in eventos.items():
