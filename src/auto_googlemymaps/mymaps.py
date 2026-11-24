@@ -35,6 +35,8 @@ _DADOS_ENVIADOS = re.compile(r"^(?:Uploaded data|Dados enviados|Dados carregados
 _CONCLUIR = re.compile(r"^(?:Finish|Concluir)$", re.IGNORECASE)
 _RADIOS_CAMADA = '[id^="upload-radio-left-"][data-name]'
 _RADIOS_CSV = '[id^="upload-radio-right-"][data-name]'
+_SELETOR_AVISO_CAMADA = '#butterbar-wrap [data-content-id="undo"] [aria-live="assertive"]'
+_SUCESSO_CAMADA = "A camada foi atualizada com novo conteúdo."
 _SUCESSO = re.compile(
     r"^(?:Import (?:complete|successful)|(?:Data|Items) (?:imported|updated) successfully|"
     r"Importação (?:concluída|bem-sucedida)|(?:Dados|Itens) (?:importados|atualizados) com sucesso)[.!]?$",
@@ -344,7 +346,8 @@ def reimportar_camada(
 ) -> None:
     visivel = pagina.locator(":visible")
     avisos = pagina.locator('[role="status"], [role="alert"], [aria-live], [role="dialog"]')
-    sucesso = avisos.get_by_text(_SUCESSO).or_(avisos.filter(has_text=_SUCESSO)).and_(visivel)
+    aviso_da_camada = pagina.locator(_SELETOR_AVISO_CAMADA).get_by_text(_SUCESSO_CAMADA, exact=True)
+    sucesso = avisos.get_by_text(_SUCESSO).or_(avisos.filter(has_text=_SUCESSO)).or_(aviso_da_camada).and_(visivel)
     falha = avisos.get_by_text(_FALHA).or_(avisos.filter(has_text=_FALHA)).and_(visivel)
     etapa = "abrir o menu de opções da camada"
     enviada = False

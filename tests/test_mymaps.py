@@ -280,21 +280,24 @@ def test_nome_divergente_no_csv_impede_marcar_qualquer_lado(pagina, corresponden
 def importacao(pagina, monkeypatch):
     estado = Mock()
     avisos = Mock()
-    locators = dict(visivel=Mock(), sucesso=Mock(), falha=Mock(), captcha=Mock(), radios=Mock())
+    locators = dict(visivel=Mock(), sucesso=Mock(), falha=Mock(), captcha=Mock(), radios=Mock(), butterbar=Mock())
     locators["captcha"].count.return_value = 0
     locators["falha"].count.return_value = 0
     locators["radios"].and_.return_value.first.is_visible.return_value = False
     pagina.locator.side_effect = lambda css: (
         locators["radios"] if css == mymaps._RADIOS_CAMADA
         else locators["visivel"] if css == ":visible"
+        else locators["butterbar"] if css == mymaps._SELETOR_AVISO_CAMADA
         else avisos if 'role="status"' in css else locators["captcha"]
     )
 
     def aviso(regex):
         candidato = Mock()
-        candidato.or_.return_value.and_.return_value = (
-            locators["sucesso"] if regex.search("Import successful") else locators["falha"]
-        )
+        alternativas = candidato.or_.return_value
+        if regex.search("Import successful"):
+            alternativas.or_.return_value.and_.return_value = locators["sucesso"]
+        else:
+            alternativas.and_.return_value = locators["falha"]
         return candidato
 
     avisos.get_by_text.side_effect = aviso
@@ -317,9 +320,20 @@ def test_reimporta_correspondentes_e_exige_um_novo_sinal_de_sucesso(pagina, impo
         (dialogo, mymaps._DADOS_CAMADA, "CHAVE"), (dialogo, mymaps._DADOS_ENVIADOS, "CHAVE"),
     ]
     dialogo.get_by_role.return_value.click.assert_called_once()
+    locators["butterbar"].get_by_text.assert_called_once_with(
+        "A camada foi atualizada com novo conteúdo.", exact=True,
+    )
     locators["sucesso"].first.wait_for.assert_called_once_with(state="hidden")
     locators["sucesso"].or_.return_value.first.wait_for.assert_called_once_with(state="visible", timeout=45_000)
     dialogo.wait_for.assert_called_once_with(state="hidden")
+
+
+def test_aviso_anterior_ainda_visivel_impede_concluir(pagina, importacao):
+    _, remota, dialogo, locators = importacao
+    locators["sucesso"].first.wait_for.side_effect = TimeoutError("AVISO_ANTERIOR")
+    with pytest.raises(mymaps.ErroMapa, match="confirmar o resultado"):
+        mymaps.reimportar_camada(pagina, MAPA, remota, CAMADA, "CHAVE")
+    dialogo.get_by_role.return_value.click.assert_not_called()
 
 
 @pytest.mark.parametrize(("rotulo", "aceito"), [
