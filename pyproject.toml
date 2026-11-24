@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-googlemymaps"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automacao local de atualizacao de camadas do Google My Maps com Playwright"
 readme = "README.md"
 requires-python = ">=3.10"
