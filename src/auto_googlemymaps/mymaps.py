@@ -33,6 +33,8 @@ _SELECIONAR = re.compile(r"^(?:Select|Selecionar)$", re.IGNORECASE)
 _DADOS_CAMADA = re.compile(r"^(?:Layer data|Dados da camada)\s*:?$", re.IGNORECASE)
 _DADOS_ENVIADOS = re.compile(r"^(?:Uploaded data|Dados enviados|Dados carregados)\s*:?$", re.IGNORECASE)
 _CONCLUIR = re.compile(r"^(?:Finish|Concluir)$", re.IGNORECASE)
+_RADIOS_CAMADA = '[id^="upload-radio-left-"][data-name]'
+_RADIOS_CSV = '[id^="upload-radio-right-"][data-name]'
 _SUCESSO = re.compile(
     r"^(?:Import (?:complete|successful)|(?:Data|Items) (?:imported|updated) successfully|"
     r"Importação (?:concluída|bem-sucedida)|(?:Dados|Itens) (?:importados|atualizados) com sucesso)[.!]?$",
@@ -297,6 +299,45 @@ def _selecionar_coluna(dialogo: Locator, rotulo: re.Pattern[str], coluna: str) -
         raise ErroMapa("A interface não confirmou a seleção da coluna de identificação.")
 
 
+def _preparar_correspondencia(pagina: Page, coluna: str) -> tuple[Locator, Locator]:
+    visivel = pagina.locator(":visible")
+    opcoes_camada = pagina.locator(_RADIOS_CAMADA).and_(visivel)
+    campo_camada = pagina.get_by_role("combobox", name=_DADOS_CAMADA).or_(
+        pagina.get_by_role("button", name=_DADOS_CAMADA)
+    )
+    dialogo_lista = pagina.get_by_role("dialog").filter(has=campo_camada)
+    opcoes_camada.or_(dialogo_lista.and_(visivel)).first.wait_for(state="visible")
+    if not opcoes_camada.first.is_visible():
+        _selecionar_coluna(dialogo_lista, _DADOS_CAMADA, coluna)
+        _selecionar_coluna(dialogo_lista, _DADOS_ENVIADOS, coluna)
+        return dialogo_lista, dialogo_lista.get_by_role("button", name=_CONCLUIR)
+
+    # Os dois grupos pertencem ao mesmo painel, mesmo quando o editor não usa role="dialog".
+    painel = opcoes_camada.locator(
+        'xpath=ancestor::*[not(self::html or self::body) and '
+        './/*[@data-name and starts-with(@id, "upload-radio-right-")]][1]'
+    )
+    painel.wait_for(state="visible")
+    nome = re.compile(rf"^\ufeff?{re.escape(coluna)}$")
+    radios = [
+        painel.locator(grupo).get_by_role("radio", name=nome).and_(visivel)
+        for grupo in (_RADIOS_CAMADA, _RADIOS_CSV)
+    ]
+    for radio in radios:
+        # Limitar a compatibilidade com BOM a um marcador inicial no nome da coluna.
+        if radio.locator("xpath=..").get_attribute("data-name") not in {coluna, "\ufeff" + coluna}:
+            raise ErroMapa("O nome da coluna de identificação no seletor não corresponde ao configurado.")
+    for radio in radios:
+        if radio.get_attribute("aria-checked") != "true":
+            radio.click()
+    for radio in radios:
+        radio.and_(pagina.locator('[aria-checked="true"]')).wait_for(state="visible")
+
+    concluir = pagina.get_by_role("button", name=_CONCLUIR).and_(visivel)
+    assistente = painel.locator("xpath=ancestor-or-self::*[not(self::html or self::body)]").filter(has=concluir).last
+    return painel, assistente.get_by_role("button", name=_CONCLUIR).and_(visivel)
+
+
 def reimportar_camada(
     pagina: Page, mapa: Mapa, remota: CamadaRemota, camada: Camada, coluna_identificacao: str,
     *, arrastar_csv: bool = False,
@@ -324,21 +365,16 @@ def reimportar_camada(
 
         etapa = "selecionar a coluna de identificação nos dados da camada e do CSV"
         _confirmar_destino(pagina, mapa)
-        # O nome acessível dos dois campos identifica o assistente de correspondência.
-        campo_camada = pagina.get_by_role("combobox", name=_DADOS_CAMADA).or_(
-            pagina.get_by_role("button", name=_DADOS_CAMADA)
-        )
-        dialogo = pagina.get_by_role("dialog").filter(has=campo_camada)
-        _selecionar_coluna(dialogo, _DADOS_CAMADA, coluna_identificacao)
-        _selecionar_coluna(dialogo, _DADOS_ENVIADOS, coluna_identificacao)
+        dialogo, concluir = _preparar_correspondencia(pagina, coluna_identificacao)
 
         etapa = "confirmar o resultado da reimportação na interface"
         sucesso.first.wait_for(state="hidden")
         if falha.count():
             raise ErroMapa(_IMPORTACAO_FALHOU)
         _confirmar_destino(pagina, mapa)
+        concluir.wait_for(state="visible")
         enviada = True
-        dialogo.get_by_role("button", name=_CONCLUIR).click()
+        concluir.click()
         sucesso.or_(falha).first.wait_for(state="visible", timeout=45_000)
         if falha.count():
             raise ErroMapa(_IMPORTACAO_FALHOU)
