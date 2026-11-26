@@ -74,6 +74,7 @@ def test_bloqueio_de_seguranca(pagina):
 
 @pytest.fixture
 def cabecalhos(pagina):
+    pagina.locator.return_value.filter.return_value.count.return_value = 0
     return pagina.get_by_label.return_value.or_.return_value.or_.return_value.locator.return_value
 
 

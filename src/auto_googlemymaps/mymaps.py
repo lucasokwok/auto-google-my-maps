@@ -119,19 +119,23 @@ def _opcoes_camada(escopo: Page | Locator) -> Locator:
 
 def localizar_camada(pagina: Page, nome: str) -> CamadaRemota:
     titulo = pagina.get_by_text(nome, exact=True).and_(pagina.locator(":visible"))
-    # O menu e o seletor de visibilidade delimitam o cabeçalho, antes da lista de pontos.
-    cabecalhos = _opcoes_camada(pagina).locator(
-        f'xpath=ancestor::*[not(self::body or self::html) and .//*[{_CONTROLE_VISIBILIDADE}]][1]'
-    )
-    cabecalho = cabecalhos.filter(has=titulo)
-    opcoes = _opcoes_camada(cabecalho)
     etapa = "O nome exato da camada não apareceu na página do editor."
     try:
         titulo.first.wait_for(state="visible")
         etapa = "Não foi possível associar o título a um único menu de camada na legenda."
+        cabecalho = pagina.locator('[id$="-layer-header"]:visible').filter(has=titulo)
+        if cabecalho.count() == 0:
+            # Em outras estruturas, o menu e o seletor de visibilidade delimitam o cabeçalho.
+            cabecalho = _opcoes_camada(pagina).locator(
+                f'xpath=ancestor::*[not(self::body or self::html) and .//*[{_CONTROLE_VISIBILIDADE}]][1]'
+            ).filter(has=titulo)
         cabecalho.wait_for(state="visible")
+        etapa = "O cabeçalho da camada não contém um único controle de visibilidade reconhecido."
         cabecalho.locator(f'xpath=.//*[{_CONTROLE_VISIBILIDADE}]').wait_for(state="attached")
+        etapa = "O cabeçalho da camada não contém um único título exato visível."
         cabecalho.get_by_text(nome, exact=True).and_(cabecalho.locator(":visible")).wait_for(state="visible")
+        etapa = "O cabeçalho da camada não contém um único menu de opções reconhecido."
+        opcoes = _opcoes_camada(cabecalho)
         opcoes.wait_for(state="attached")
     except Error:
         exigir_sessao(pagina)
