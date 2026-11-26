@@ -6,7 +6,7 @@
 # Dados locais: não versionar nenhum mapa, pasta ou CSV
 /MAPAS/**
 !/MAPAS/README.md
-!/MAPAS/gerar_mapas.py
+!/MAPAS/gerar_mapas_exemplo.py
 *.csv
 *.tsv
 *.xlsx
