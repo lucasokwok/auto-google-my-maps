@@ -413,15 +413,21 @@ def _preparar_correspondencia(pagina: Page, coluna: str) -> tuple[Locator, Locat
         './/*[@data-name and starts-with(@id, "upload-radio-right-")]][1]'
     )
     painel.wait_for(state="visible")
-    nome = re.compile(rf"^\ufeff?{re.escape(coluna)}$")
-    radios = [
-        painel.locator(grupo).get_by_role("radio", name=nome).and_(visivel)
-        for grupo in (_RADIOS_CAMADA, _RADIOS_CSV)
-    ]
-    for radio in radios:
-        # Limitar a compatibilidade com BOM a um marcador inicial no nome da coluna.
-        if radio.locator("xpath=..").get_attribute("data-name") not in {coluna, "\ufeff" + coluna}:
-            raise ErroMapa("O nome da coluna de identificação no seletor não corresponde ao configurado.")
+    # O My Maps pode exibir o BOM inicial como Unicode ou como o prefixo �ｻｿ.
+    nome = re.compile(rf"^(?:\ufeff|�ｻｿ)?{re.escape(coluna)}$")
+    radios = []
+    for grupo, lado in ((_RADIOS_CAMADA, "dados da camada"), (_RADIOS_CSV, "dados enviados")):
+        opcoes = painel.locator(grupo)
+        opcoes.get_by_role("radio").and_(visivel).first.wait_for(state="visible")
+        radio = opcoes.get_by_role("radio", name=nome).and_(visivel)
+        ocorrencias = radio.count()
+        if ocorrencias != 1:
+            motivo = "não foi encontrada" if ocorrencias == 0 else "é ambígua"
+            raise ErroMapa(f"A coluna de identificação {motivo} nos {lado}.")
+        nome_interno = radio.locator("xpath=..").get_attribute("data-name")
+        if not nome.fullmatch(nome_interno or ""):
+            raise ErroMapa(f"O nome da coluna de identificação nos {lado} não corresponde ao configurado.")
+        radios.append(radio)
     for radio in radios:
         if radio.get_attribute("aria-checked") != "true":
             radio.click()

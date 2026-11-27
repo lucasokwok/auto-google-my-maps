@@ -412,19 +412,28 @@ def correspondencia_radio(pagina):
     painel.locator.side_effect = lambda seletor: grupos.get(seletor, painel)
     radios = [grupo.get_by_role.return_value.and_.return_value for grupo in grupos.values()]
     for radio, nome in zip(radios, ("\ufeffID", "ID")):
+        radio.count.return_value = 1
         radio.locator.return_value.get_attribute.return_value = nome
         radio.get_attribute.return_value = "false"
     return painel, grupos, radios
 
 
-def test_seleciona_id_em_ambos_os_grupos_com_ou_sem_bom(pagina, correspondencia_radio):
+@pytest.mark.parametrize("coluna", ["ID", "CHAVE.1"])
+@pytest.mark.parametrize("prefixo", ["", "\ufeff", "�ｻｿ"])
+def test_seleciona_coluna_em_ambos_os_grupos_com_ou_sem_bom(pagina, correspondencia_radio, coluna, prefixo):
     painel, grupos, radios = correspondencia_radio
-    selecionado, _ = mymaps._preparar_correspondencia(pagina, "ID")
+    radios[0].locator.return_value.get_attribute.return_value = prefixo + coluna
+    radios[1].locator.return_value.get_attribute.return_value = coluna
+    selecionado, _ = mymaps._preparar_correspondencia(pagina, coluna)
     assert selecionado is painel
     for grupo in grupos.values():
         nome = grupo.get_by_role.call_args.kwargs["name"]
-        assert nome.fullmatch("ID") and nome.fullmatch("\ufeffID")
-        assert not nome.fullmatch("OutroID")
+        assert all(nome.fullmatch(p + coluna) for p in ("", "\ufeff", "�ｻｿ"))
+        assert not nome.fullmatch("Outro" + coluna)
+        assert not nome.fullmatch("�ｻｿ\ufeff" + coluna)
+        assert not nome.fullmatch(coluna + "�ｻｿ")
+        if coluna == "CHAVE.1":
+            assert not nome.fullmatch("CHAVEX1")
     for radio in radios:
         radio.click.assert_called_once()
         radio.and_.return_value.wait_for.assert_called_once_with(state="visible")
@@ -433,7 +442,20 @@ def test_seleciona_id_em_ambos_os_grupos_com_ou_sem_bom(pagina, correspondencia_
 def test_nome_divergente_no_csv_impede_marcar_qualquer_lado(pagina, correspondencia_radio):
     _, _, radios = correspondencia_radio
     radios[1].locator.return_value.get_attribute.return_value = "Outra"
-    with pytest.raises(mymaps.ErroMapa, match="não corresponde ao configurado"):
+    with pytest.raises(mymaps.ErroMapa, match="nos dados enviados não corresponde ao configurado"):
+        mymaps._preparar_correspondencia(pagina, "ID")
+    for radio in radios:
+        radio.click.assert_not_called()
+
+
+@pytest.mark.parametrize("grupo, lado", [(0, "dados da camada"), (1, "dados enviados")])
+@pytest.mark.parametrize("quantidade, motivo", [(0, "não foi encontrada"), (2, "é ambígua")])
+def test_coluna_ausente_ou_ambigua_impede_marcar_qualquer_lado(
+    pagina, correspondencia_radio, grupo, lado, quantidade, motivo,
+):
+    _, _, radios = correspondencia_radio
+    radios[grupo].count.return_value = quantidade
+    with pytest.raises(mymaps.ErroMapa, match=f"{motivo} nos {lado}"):
         mymaps._preparar_correspondencia(pagina, "ID")
     for radio in radios:
         radio.click.assert_not_called()
